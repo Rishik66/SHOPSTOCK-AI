@@ -1,9 +1,10 @@
-import { Product, Transaction, Language, UserAccount } from '../types';
+import { Product, Transaction, Language, UserAccount, ReviewItem } from '../types';
 
 const KEYS = {
   USERS: 'ss_users',
   CURRENT_USER: 'ss_current_user',
   LANGUAGE: 'ss_language',
+  REVIEWS: 'ss_reviews',
 };
 
 // Users management
@@ -88,3 +89,60 @@ export function saveLanguage(lang: Language): void {
 export function loadLanguage(): Language {
   return (localStorage.getItem(KEYS.LANGUAGE) as Language) || 'en';
 }
+
+const DEFAULT_REVIEWS: ReviewItem[] = [
+  {
+    id: 'rev_1',
+    name: 'Ramesh Patel',
+    shopName: 'Patel Kirana & General Store',
+    rating: 5,
+    category: 'Billing & POS',
+    comment: 'Billing is so simple and fast! Even during peak evening rush, bills are done in 10 seconds. Excellent app for Indian shops.',
+    date: '2026-09-24T10:30:00.000Z'
+  },
+  {
+    id: 'rev_2',
+    name: 'Suresh Reddy',
+    shopName: 'Sri Venkateshwara Provisions',
+    rating: 5,
+    category: 'AI Assistant',
+    comment: 'Voice assistant in Telugu and Hindi is a game changer. I just speak "Add 20 Maggi" or "What is today sales" and it handles it instantly.',
+    date: '2026-09-26T14:15:00.000Z'
+  },
+  {
+    id: 'rev_3',
+    name: 'Anand Sharma',
+    shopName: 'Sharma Dairy & Daily Needs',
+    rating: 5,
+    category: 'Smart Restock',
+    comment: 'The restock calculator tells me exactly how many days of milk and bread stock are left. No more stockouts or wastage!',
+    date: '2026-09-27T09:45:00.000Z'
+  },
+  {
+    id: 'rev_4',
+    name: 'Manjunath Swamy',
+    shopName: 'Bangalore Daily Supermarket',
+    rating: 4,
+    category: 'Ease of Use',
+    comment: 'Very clean and easy to use. No complicated setup, works directly on my mobile phone browser.',
+    date: '2026-09-28T08:00:00.000Z'
+  }
+];
+
+export function loadReviews(): ReviewItem[] {
+  try {
+    const raw = localStorage.getItem(KEYS.REVIEWS);
+    if (!raw) {
+      localStorage.setItem(KEYS.REVIEWS, JSON.stringify(DEFAULT_REVIEWS));
+      return DEFAULT_REVIEWS;
+    }
+    return JSON.parse(raw);
+  } catch {
+    return DEFAULT_REVIEWS;
+  }
+}
+
+export function saveReviews(reviews: ReviewItem[]): void {
+  localStorage.setItem(KEYS.REVIEWS, JSON.stringify(reviews));
+}
+

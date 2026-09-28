@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { tr } from '../i18n';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { TrendingUp, Package, AlertTriangle, ShoppingCart, Bot, RefreshCw, Camera, Plus } from 'lucide-react';
+import { TrendingUp, Package, AlertTriangle, ShoppingCart, Bot, RefreshCw, Camera, Plus, Star } from 'lucide-react';
 
 export function Dashboard() {
   const { products, transactions, language, setCurrentPage } = useApp();
@@ -169,6 +169,25 @@ export function Dashboard() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Reviews & Feedback Banner at Bottom */}
+      <div className="bg-gradient-to-r from-amber-500/10 via-yellow-500/10 to-orange-500/10 border border-amber-200 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="p-3 bg-amber-500 text-white rounded-xl shadow-md shadow-amber-500/20">
+            <Star size={24} className="fill-white" />
+          </div>
+          <div>
+            <h3 className="font-bold text-gray-900 text-base">How is your experience with ShopStock AI?</h3>
+            <p className="text-xs text-gray-600">Rate our billing, voice assistant, and inventory system or view shopkeeper reviews.</p>
+          </div>
+        </div>
+        <button
+          onClick={() => setCurrentPage('reviews')}
+          className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl shadow-md shadow-amber-500/20 shrink-0 transition-all flex items-center gap-1.5"
+        >
+          <span>Reviews & Ratings</span> ⭐
+        </button>
       </div>
     </div>
   );

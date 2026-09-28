@@ -1,11 +1,11 @@
 import React from 'react';
-import { LayoutDashboard, Package, ShoppingCart, Bot, RefreshCw, Camera, X, LogOut, Store } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingCart, Bot, RefreshCw, Camera, X, LogOut, Store, Star } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { tr } from '../i18n';
 import { Language, Page } from '../types';
 
 export function Sidebar({ onClose }: { onClose?: () => void }) {
-  const { currentPage, setCurrentPage, language, setLanguage, resetDemoData, currentUser, logout } = useApp();
+  const { currentPage, setCurrentPage, language, setLanguage, currentUser, logout } = useApp();
 
   const navItems: { id: Page; icon: React.ElementType; label: string }[] = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'nav_dashboard' },
@@ -14,6 +14,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
     { id: 'ai-assistant', icon: Bot, label: 'nav_ai' },
     { id: 'smart-restock', icon: RefreshCw, label: 'nav_restock' },
     { id: 'invoice-scanner', icon: Camera, label: 'nav_invoice' },
+    { id: 'reviews', icon: Star, label: 'nav_reviews' },
   ];
 
   return (
@@ -73,16 +74,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
             <option value="kn">🇮🇳 ಕನ್ನಡ</option>
           </select>
         </div>
-        <button
-          onClick={() => {
-            if (window.confirm(tr(language, 'resetConfirm'))) {
-              resetDemoData();
-            }
-          }}
-          className="w-full text-sm text-red-600 hover:bg-red-50 p-2 rounded-md font-medium"
-        >
-          {tr(language, 'reset')}
-        </button>
+
         <button
           onClick={() => {
             if (window.confirm("Are you sure you want to log out?")) {
