@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Store, User, Lock, Mail, ArrowRight, ShieldCheck, Sparkles, Globe, Eye, EyeOff, Check, UserCheck } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Language, UserAccount } from '../types';
@@ -23,14 +23,15 @@ export function AuthPage() {
 
   const [savedUsers, setSavedUsers] = useState<UserAccount[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const passwordInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const list = getRegisteredUsers();
     setSavedUsers(list);
-    // Pre-fill with the first non-demo user if available
-    const nonDemo = list.find(u => u.id !== 'demo_ravi');
-    if (nonDemo) {
-      setLoginIdentifier(nonDemo.ownerName || nonDemo.email);
+    // Pre-fill with the first non-demo user if available and identifier is empty
+    const nonDemo = list.filter(u => u.id !== 'demo_ravi');
+    if (nonDemo.length > 0 && !loginIdentifier) {
+      setLoginIdentifier(nonDemo[0].ownerName || nonDemo[0].email);
     }
   }, [mode]);
 
@@ -112,7 +113,7 @@ export function AuthPage() {
             <p className="text-sm text-slate-500 mt-1">
               {mode === 'login' 
                 ? 'Sign in to access your personal store inventory and sales.' 
-                : 'Create your private account. Only you can view your store data.'}
+                : 'Create your private account. Fresh accounts start with a clean slate.'}
             </p>
           </div>
 
@@ -160,6 +161,7 @@ export function AuthPage() {
                       onClick={() => {
                         setLoginIdentifier(user.ownerName || user.email);
                         setError(null);
+                        setTimeout(() => passwordInputRef.current?.focus(), 50);
                       }}
                       className={`w-full text-left p-2.5 rounded-xl border text-xs transition-all flex items-center justify-between ${
                         isSelected
@@ -224,6 +226,7 @@ export function AuthPage() {
                 <div className="relative">
                   <Lock size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
+                    ref={passwordInputRef}
                     type={showPassword ? 'text' : 'password'}
                     required
                     value={loginPassword}
@@ -238,7 +241,7 @@ export function AuthPage() {
                 type="submit"
                 className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-500/30 flex items-center justify-center gap-2 transition-all mt-2"
               >
-                Sign In to My Shop <ArrowRight size={18} />
+                Sign In to My Store <ArrowRight size={18} />
               </button>
             </form>
           )}
@@ -246,6 +249,10 @@ export function AuthPage() {
           {/* Sign Up Form */}
           {mode === 'signup' && (
             <form onSubmit={handleSignupSubmit} className="space-y-3.5">
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-2xl text-[11px] text-blue-900 font-medium">
+                ✨ <strong>Clean Slate Guarantee:</strong> Fresh accounts start with <strong>0 products and ₹0 sales</strong>. All inventory and sales you record will be safely remembered for your account across browser sessions.
+              </div>
+
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                   Shop / Store Name
@@ -257,7 +264,7 @@ export function AuthPage() {
                     required
                     value={shopName}
                     onChange={(e) => setShopName(e.target.value)}
-                    placeholder="e.g. Lakshmi Kirana Store"
+                    placeholder="e.g. Sri Lakshmi Super Store"
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-600 focus:bg-white outline-none"
                   />
                 </div>
@@ -265,7 +272,7 @@ export function AuthPage() {
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Owner's Name
+                  Owner Full Name
                 </label>
                 <div className="relative">
                   <User size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -274,7 +281,7 @@ export function AuthPage() {
                     required
                     value={ownerName}
                     onChange={(e) => setOwnerName(e.target.value)}
-                    placeholder="e.g. Ramesh Kumar"
+                    placeholder="e.g. Ramesh Patel"
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-600 focus:bg-white outline-none"
                   />
                 </div>
@@ -291,7 +298,7 @@ export function AuthPage() {
                     required
                     value={signupEmail}
                     onChange={(e) => setSignupEmail(e.target.value)}
-                    placeholder="e.g. ramesh@gmail.com"
+                    placeholder="e.g. ramesh@store.com"
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-600 focus:bg-white outline-none"
                   />
                 </div>
@@ -331,12 +338,11 @@ export function AuthPage() {
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-600 focus:bg-white outline-none"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-600 focus:bg-white outline-none"
                 >
                   <option value="Grocery / Kirana">Grocery / Kirana</option>
-                  <option value="General Store">General Store</option>
-                  <option value="Dairy & Milk">Dairy & Milk</option>
-                  <option value="Bakery & Sweets">Bakery & Sweets</option>
+                  <option value="Provisions & General Store">Provisions & General Store</option>
+                  <option value="Dairy & Bakery">Dairy & Bakery</option>
                   <option value="Supermarket">Supermarket</option>
                   <option value="Other Retail">Other Retail</option>
                 </select>

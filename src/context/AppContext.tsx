@@ -1,10 +1,12 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Product, Transaction, Language, AppNotification, Page, UserAccount } from '../types';
 import {
+  DEMO_USER,
   getCurrentUser,
   setCurrentUser,
   getRegisteredUsers,
   saveRegisteredUsers,
+  findUserDirectly,
   loadUserProducts,
   saveUserProducts,
   loadUserTransactions,
@@ -16,15 +18,7 @@ import {
   saveLanguage as storageSaveLanguage,
 } from '../utils/storage';
 
-export const DEMO_USER: UserAccount = {
-  id: 'demo_ravi',
-  email: 'demo@shopstock.ai',
-  password: 'demo',
-  shopName: 'Ravi General Store',
-  ownerName: 'Ravi Kumar',
-  category: 'General Store',
-  createdAt: '2026-01-01T00:00:00.000Z'
-};
+export { DEMO_USER };
 
 const DEMO_PRODUCTS: Product[] = [
   { id: '1', name: 'Maggi', category: 'Noodles', stock: 8, purchasePrice: 12, sellingPrice: 14, minimumStock: 10 },
@@ -87,6 +81,7 @@ interface AppContextType {
   language: Language;
   notifications: AppNotification[];
   currentPage: Page;
+  ready: boolean;
   setProducts: (products: Product[]) => void;
   setTransactions: (transactions: Transaction[]) => void;
   setLanguage: (lang: Language) => void;
@@ -126,9 +121,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     const userId = user.id;
 
-    if (!isUserInitialized(userId)) {
-      if (userId === DEMO_USER.id) {
-        // Pre-populate demo store for Ravi General Store
+    // Demo store account (Ravi General Store)
+    if (userId === DEMO_USER.id) {
+      if (!isUserInitialized(userId)) {
         saveUserProducts(userId, DEMO_PRODUCTS);
         const demoTxns = generateDemoTransactions(DEMO_PRODUCTS);
         saveUserTransactions(userId, demoTxns);
@@ -136,38 +131,41 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setProductsState(DEMO_PRODUCTS);
         setTransactionsState(demoTxns);
       } else {
-        // New real user gets full standard Kirana product catalog so all voice commands work immediately
-        saveUserProducts(userId, DEMO_PRODUCTS);
-        saveUserTransactions(userId, []);
-        setUserInitialized(userId);
-        setProductsState(DEMO_PRODUCTS);
-        setTransactionsState([]);
+        setProductsState(loadUserProducts(userId));
+        setTransactionsState(loadUserTransactions(userId));
       }
+      return;
+    }
+
+    // REAL REGISTERED USER:
+    if (!isUserInitialized(userId)) {
+      // BRAND NEW USER / FRESHER: ALL VALUES MUST BE 0!
+      // 0 products, 0 sales, 0 profit, 0 low stock!
+      saveUserProducts(userId, []);
+      saveUserTransactions(userId, []);
+      setUserInitialized(userId);
+      setProductsState([]);
+      setTransactionsState([]);
     } else {
-      const loaded = loadUserProducts(userId);
-      // Upgrade existing user accounts that had the dummy "Sample Item" placeholders to real Kirana catalog
-      if (loaded.length === 0 || (loaded.length <= 2 && loaded.some(p => p.name.includes('Sample Item')))) {
-        saveUserProducts(userId, DEMO_PRODUCTS);
-        setProductsState(DEMO_PRODUCTS);
-      } else {
-        setProductsState(loaded);
-      }
-      setTransactionsState(loadUserTransactions(userId));
+      // RETURNING USER: Load their exact stored products and sales!
+      // Preserves every item added and sale completed by this account.
+      const loadedProducts = loadUserProducts(userId);
+      const loadedTransactions = loadUserTransactions(userId);
+      setProductsState(loadedProducts);
+      setTransactionsState(loadedTransactions);
     }
   };
 
   useEffect(() => {
-    // Load language preference
+    // 1. Load language preference
     const lang = loadLanguage();
     setLanguageState(lang);
 
-    // Ensure demo user exists in registered users
+    // 2. Ensure registered users list is initialized
     const users = getRegisteredUsers();
-    if (!users.some(u => u.email === DEMO_USER.email)) {
-      saveRegisteredUsers([...users, DEMO_USER]);
-    }
+    saveRegisteredUsers(users);
 
-    // Load active session
+    // 3. Load active session across browser closes
     const savedUser = getCurrentUser();
     if (savedUser) {
       setCurrentUserState(savedUser);
@@ -178,29 +176,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = (identifier: string, pass: string): { success: boolean; error?: string } => {
-    const clean = identifier.trim().toLowerCase();
+    const clean = identifier.trim();
     if (!clean) {
       return { success: false, error: 'Please enter your email, owner name, or shop name.' };
     }
 
-    const users = getRegisteredUsers();
-    
-    // Look up by email, ownerName, or shopName
-    const user = users.find(u => 
-      u.email.toLowerCase() === clean ||
-      u.ownerName.toLowerCase() === clean ||
-      u.shopName.toLowerCase() === clean ||
-      (clean.length >= 3 && (
-        u.email.toLowerCase().includes(clean) ||
-        u.ownerName.toLowerCase().includes(clean) ||
-        u.shopName.toLowerCase().includes(clean)
-      ))
-    );
+    // Direct and robust user lookup with backup scanning
+    const user = findUserDirectly(clean);
 
     if (!user) {
       return { 
         success: false, 
-        error: `No account found for "${identifier}". Please check your spelling or switch to Create Account.` 
+        error: `No account found for "${identifier}". Please check spelling or switch to Create Account.` 
       };
     }
 
@@ -221,7 +208,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const cleanShop = data.shopName.trim();
     const users = getRegisteredUsers();
 
-    if (users.some(u => u.email.toLowerCase() === cleanEmail && u.email !== DEMO_USER.email)) {
+    if (users.some(u => u.email && u.email.toLowerCase() === cleanEmail && u.id !== DEMO_USER.id)) {
       return { success: false, error: 'An account with this email already exists. Please sign in.' };
     }
 
@@ -238,6 +225,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     saveRegisteredUsers(updatedUsers);
     setCurrentUser(newUser);
     setCurrentUserState(newUser);
+
+    // Initialize fresh account with 0 products and 0 transactions
     loadUserData(newUser);
     setCurrentPage('dashboard');
     return { success: true };
@@ -293,8 +282,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  if (!ready) return null;
-
   return (
     <AppContext.Provider value={{
       currentUser,
@@ -303,6 +290,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       language, setLanguage,
       notifications, addNotification,
       currentPage, setCurrentPage,
+      ready,
       resetDemoData,
       login, signup, loginDemo, logout
     }}>
