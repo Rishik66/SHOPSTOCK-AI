@@ -15,11 +15,7 @@ export function AIAssistant() {
   const [pendingAction, setPendingAction] = useState<AIAction | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const getSR = () => {
-    return (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-  };
 
-  const srSupported = !!getSR();
 
   useEffect(() => {
     setMessages([{
@@ -76,31 +72,111 @@ export function AIAssistant() {
     }, 600);
   };
 
-  const startVoice = () => {
-    if (!srSupported) return;
+  const [transcriptPreview, setTranscriptPreview] = useState('');
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort(); } catch {}
+      }
+    };
+  }, []);
+
+  const getSR = () => {
+    return (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+  };
+
+  const srSupported = !!getSR();
+
+  const toggleVoice = () => {
+    setVoiceError(null);
+
+    // If currently listening, stop and send
+    if (isListening) {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch {}
+      }
+      setIsListening(false);
+      return;
+    }
+
+    if (!srSupported) {
+      setVoiceError(tr(language, 'ai_noVoice'));
+      return;
+    }
+
     const SR = getSR();
     const recognition = new SR();
-    
+    recognitionRef.current = recognition;
+
     const langMap: Record<string, string> = { en: 'en-IN', te: 'te-IN', hi: 'hi-IN', kn: 'kn-IN' };
     recognition.lang = langMap[language] || 'en-IN';
-    recognition.continuous = false;
-    recognition.interimResults = false;
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
 
-    recognition.onstart = () => setIsListening(true);
-    recognition.onend = () => setIsListening(false);
-    
+    let capturedText = '';
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      setTranscriptPreview('');
+      setVoiceError(null);
+    };
+
     recognition.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript;
-      setInput(transcript);
-      handleSend(transcript);
-    };
-    
-    recognition.onerror = (event: any) => {
-      console.error(event.error);
-      setIsListening(false);
+      let interim = '';
+      let final = '';
+
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        const item = event.results[i];
+        if (item.isFinal) {
+          final += item[0].transcript;
+        } else {
+          interim += item[0].transcript;
+        }
+      }
+
+      const activeText = (final || interim).trim();
+      if (activeText) {
+        capturedText = activeText;
+        setTranscriptPreview(activeText);
+        setInput(activeText);
+      }
     };
 
-    recognition.start();
+    recognition.onerror = (event: any) => {
+      console.warn("Speech recognition error:", event.error);
+      setIsListening(false);
+      if (event.error === 'no-speech') {
+        setVoiceError("No speech detected. Please speak closer to your microphone or check microphone volume in Windows settings.");
+      } else if (event.error === 'not-allowed') {
+        setVoiceError("Microphone permission was blocked. Click the lock/settings icon in the browser address bar to allow microphone access.");
+      } else if (event.error === 'audio-capture') {
+        setVoiceError("No microphone found. Please connect or enable your microphone.");
+      } else if (event.error === 'network') {
+        setVoiceError("Speech service network error. Please try again or type your question.");
+      } else {
+        setVoiceError(`Voice error (${event.error}). Try again or type below.`);
+      }
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      if (capturedText.trim()) {
+        handleSend(capturedText.trim());
+        setTranscriptPreview('');
+      }
+    };
+
+    try {
+      recognition.start();
+    } catch (err: any) {
+      console.error("Recognition start failed:", err);
+      setIsListening(false);
+      setVoiceError("Could not start microphone. Please try again.");
+    }
   };
 
   const handleAction = (confirm: boolean) => {
@@ -208,28 +284,83 @@ export function AIAssistant() {
             ))}
           </div>
         )}
+
+        {/* Live Voice Listening Banner */}
+        {isListening && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-center justify-between gap-3 shadow-sm animate-pulse">
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-600"></span>
+              </span>
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-red-800 uppercase tracking-wider">
+                  Listening ({language.toUpperCase()})... Speak now
+                </div>
+                <div className="text-sm text-gray-800 italic truncate font-medium">
+                  {transcriptPreview || "Listening for your voice... (e.g., 'How many Maggi do I have?')"}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={toggleVoice}
+                className="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 shadow-sm"
+              >
+                Done / Send
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (recognitionRef.current) {
+                    try { recognitionRef.current.abort(); } catch {}
+                  }
+                  setIsListening(false);
+                  setTranscriptPreview('');
+                  setInput('');
+                }}
+                className="px-2 py-1.5 text-gray-500 text-xs font-semibold hover:text-gray-800"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Voice Error Banner */}
+        {voiceError && (
+          <div className="bg-amber-50 border border-amber-200 text-amber-900 text-xs p-3 rounded-xl flex items-center justify-between gap-2 shadow-sm">
+            <span className="font-medium">{voiceError}</span>
+            <button onClick={() => setVoiceError(null)} className="text-amber-700 hover:text-amber-950 font-bold px-1.5 py-0.5 rounded">✕</button>
+          </div>
+        )}
+
         <form onSubmit={(e) => { e.preventDefault(); handleSend(input); }} className="flex gap-2 relative">
           <input
             type="text"
             value={input}
             onChange={e => setInput(e.target.value)}
-            placeholder={isListening ? tr(language, 'ai_listening') : tr(language, 'ai_placeholder')}
-            disabled={isListening}
+            placeholder={isListening ? "Listening... speak now" : tr(language, 'ai_placeholder')}
             className="flex-1 bg-gray-50 border border-gray-300 text-gray-900 rounded-xl px-4 py-3 pr-12 focus:ring-blue-500 focus:border-blue-500 outline-none"
           />
           <button
             type="button"
-            onClick={startVoice}
+            onClick={toggleVoice}
             disabled={!srSupported}
-            title={!srSupported ? tr(language, 'ai_noVoice') : ''}
-            className={`absolute right-16 top-1/2 -translate-y-1/2 p-2 rounded-lg ${isListening ? 'text-red-500 bg-red-50 animate-pulse' : 'text-gray-400 hover:text-gray-600 disabled:opacity-50'}`}
+            title={!srSupported ? tr(language, 'ai_noVoice') : (isListening ? "Click to Stop & Send" : "Click to Speak")}
+            className={`absolute right-16 top-1/2 -translate-y-1/2 p-2 rounded-lg transition-all ${
+              isListening 
+                ? 'text-white bg-red-600 animate-pulse hover:bg-red-700 shadow-md' 
+                : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50 disabled:opacity-40'
+            }`}
           >
             <Mic size={20} />
           </button>
           <button
             type="submit"
-            disabled={!input.trim() || isListening}
-            className="px-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+            disabled={!input.trim()}
+            className="px-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
           >
             <Send size={20} />
           </button>
