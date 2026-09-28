@@ -2,15 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { 
   Camera, X, Flashlight, Upload, CheckCircle2, AlertTriangle, 
-  Sparkles, RefreshCw, Barcode, Plus, Minus, ArrowRight, ShoppingCart, Package
+  RefreshCw, Barcode, Plus, Minus, ArrowRight, ShoppingCart, Package
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Product } from '../types';
 import { 
   identifyProductByBarcode, 
   playBarcodeBeep, 
-  BarcodeRecognitionResult, 
-  FMCG_BARCODE_CATALOG 
+  BarcodeRecognitionResult 
 } from '../services/barcodeService';
 
 interface BarcodeScannerModalProps {
@@ -390,30 +389,6 @@ export function BarcodeScannerModal({
             </div>
           )}
 
-          {/* QUICK 1-CLICK TEST BARCODES (For Instant Testing Without Physical Items) */}
-          <div className="p-3 bg-slate-100 rounded-2xl border border-slate-200 space-y-2">
-            <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-              <span className="flex items-center gap-1.5">
-                <Sparkles size={13} className="text-amber-500" />
-                Click to Test Indian Kirana Barcodes:
-              </span>
-              <span className="text-[10px] text-slate-400">1-tap scan</span>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {FMCG_BARCODE_CATALOG.slice(0, 6).map((item) => (
-                <button
-                  key={item.barcode}
-                  type="button"
-                  onClick={() => handleDetectedCode(item.barcode)}
-                  className="px-2.5 py-1.5 bg-white hover:bg-blue-50 hover:border-blue-300 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 transition-all flex items-center gap-1.5 shadow-xs"
-                >
-                  <span className="font-mono text-[10px] text-blue-600">[{item.name.split(' ')[0]}]</span>
-                  <span>{item.name}</span>
-                  <span className="text-emerald-700 font-bold">₹{item.sellingPrice}</span>
-                </button>
-              ))}
-            </div>
-          </div>
 
           {/* SCANNED PRODUCT RESULT CARD */}
           {lastScannedResult && (

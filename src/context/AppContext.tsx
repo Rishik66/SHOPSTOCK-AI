@@ -20,58 +20,17 @@ import {
 
 export { DEMO_USER };
 
-const DEMO_PRODUCTS: Product[] = [
-  { id: '1', name: 'Maggi', category: 'Noodles', stock: 8, purchasePrice: 12, sellingPrice: 14, minimumStock: 10 },
-  { id: '2', name: 'Parle-G Biscuits', category: 'Biscuits', stock: 25, purchasePrice: 8, sellingPrice: 10, minimumStock: 20 },
-  { id: '3', name: 'Aashirvaad Atta', category: 'Flour', stock: 15, purchasePrice: 55, sellingPrice: 65, minimumStock: 10 },
-  { id: '4', name: 'Tata Salt', category: 'Spices', stock: 30, purchasePrice: 20, sellingPrice: 25, minimumStock: 15 },
-  { id: '5', name: 'Amul Milk', category: 'Dairy', stock: 5, purchasePrice: 54, sellingPrice: 60, minimumStock: 10 },
-  { id: '6', name: 'Coca-Cola', category: 'Beverages', stock: 18, purchasePrice: 38, sellingPrice: 45, minimumStock: 12 },
-  { id: '7', name: 'Britannia Bread', category: 'Bakery', stock: 7, purchasePrice: 38, sellingPrice: 45, minimumStock: 10 },
-  { id: '8', name: 'Surf Excel', category: 'Detergent', stock: 12, purchasePrice: 55, sellingPrice: 65, minimumStock: 8 },
-  { id: '9', name: 'Colgate', category: 'Personal Care', stock: 20, purchasePrice: 75, sellingPrice: 90, minimumStock: 10 },
-  { id: '10', name: 'Thums Up', category: 'Beverages', stock: 22, purchasePrice: 38, sellingPrice: 45, minimumStock: 12 },
-];
+const DEMO_PRODUCT_IDS = new Set(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']);
+const DEMO_PRODUCT_NAMES = new Set([
+  'maggi', 'parle-g biscuits', 'aashirvaad atta', 'tata salt', 'amul milk',
+  'coca-cola', 'britannia bread', 'surf excel', 'colgate', 'thums up'
+]);
+const DEMO_TXN_IDS = new Set(['d1', 'd2', 'd3', 'd4', 'd5', 'd6', 't1', 't2']);
 
-function generateDemoTransactions(products: Product[]): Transaction[] {
-  const today = new Date();
-  const txns: Transaction[] = [];
-  
-  const makeDate = (daysAgo: number) => {
-    const d = new Date(today);
-    d.setDate(d.getDate() - daysAgo);
-    return d.toISOString();
-  };
-  
-  const makeItem = (productId: string, qty: number) => {
-    const p = products.find(x => x.id === productId)!;
-    return {
-      productId: p.id,
-      productName: p.name,
-      quantity: qty,
-      sellingPrice: p.sellingPrice,
-      purchasePrice: p.purchasePrice,
-    };
-  };
-  
-  const makeTxn = (id: string, date: string, items: any[]): Transaction => ({
-    id,
-    date,
-    items,
-    total: items.reduce((s, i) => s + i.sellingPrice * i.quantity, 0),
-    profit: items.reduce((s, i) => s + (i.sellingPrice - i.purchasePrice) * i.quantity, 0),
-  });
-  
-  txns.push(makeTxn('d1', makeDate(6), [makeItem('1', 3), makeItem('2', 5), makeItem('5', 2)]));
-  txns.push(makeTxn('d2', makeDate(5), [makeItem('1', 4), makeItem('9', 2), makeItem('6', 3)]));
-  txns.push(makeTxn('d3', makeDate(4), [makeItem('2', 8), makeItem('5', 3), makeItem('3', 1)]));
-  txns.push(makeTxn('d4', makeDate(3), [makeItem('1', 5), makeItem('10', 4), makeItem('7', 2)]));
-  txns.push(makeTxn('d5', makeDate(2), [makeItem('1', 6), makeItem('5', 4), makeItem('4', 3)]));
-  txns.push(makeTxn('d6', makeDate(1), [makeItem('2', 10), makeItem('8', 2), makeItem('6', 5)]));
-  txns.push(makeTxn('t1', makeDate(0), [makeItem('1', 2), makeItem('5', 1)]));
-  txns.push(makeTxn('t2', makeDate(0), [makeItem('2', 4), makeItem('3', 1), makeItem('9', 1)]));
-  
-  return txns;
+const DEMO_PRODUCTS: Product[] = [];
+
+function generateDemoTransactions(_products: Product[]): Transaction[] {
+  return [];
 }
 
 interface AppContextType {
@@ -121,38 +80,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     const userId = user.id;
 
-    // Demo store account (Ravi General Store)
-    if (userId === DEMO_USER.id) {
-      if (!isUserInitialized(userId)) {
-        saveUserProducts(userId, DEMO_PRODUCTS);
-        const demoTxns = generateDemoTransactions(DEMO_PRODUCTS);
-        saveUserTransactions(userId, demoTxns);
-        setUserInitialized(userId);
-        setProductsState(DEMO_PRODUCTS);
-        setTransactionsState(demoTxns);
-      } else {
-        setProductsState(loadUserProducts(userId));
-        setTransactionsState(loadUserTransactions(userId));
-      }
-      return;
-    }
-
-    // REAL REGISTERED USER:
     if (!isUserInitialized(userId)) {
-      // BRAND NEW USER / FRESHER: ALL VALUES MUST BE 0!
-      // 0 products, 0 sales, 0 profit, 0 low stock!
       saveUserProducts(userId, []);
       saveUserTransactions(userId, []);
       setUserInitialized(userId);
       setProductsState([]);
       setTransactionsState([]);
     } else {
-      // RETURNING USER: Load their exact stored products and sales!
-      // Preserves every item added and sale completed by this account.
+      // Load user products and transactions, stripping any legacy demo sample products
       const loadedProducts = loadUserProducts(userId);
+      const cleanedProducts = loadedProducts.filter(
+        p => !(DEMO_PRODUCT_IDS.has(p.id) && DEMO_PRODUCT_NAMES.has(p.name.toLowerCase()))
+      );
+
       const loadedTransactions = loadUserTransactions(userId);
-      setProductsState(loadedProducts);
-      setTransactionsState(loadedTransactions);
+      const cleanedTxns = loadedTransactions.filter(t => !DEMO_TXN_IDS.has(t.id));
+
+      if (cleanedProducts.length !== loadedProducts.length) {
+        saveUserProducts(userId, cleanedProducts);
+      }
+      if (cleanedTxns.length !== loadedTransactions.length) {
+        saveUserTransactions(userId, cleanedTxns);
+      }
+
+      setProductsState(cleanedProducts);
+      setTransactionsState(cleanedTxns);
     }
   };
 

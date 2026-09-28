@@ -334,7 +334,7 @@ export function AIAssistant() {
   };
 
   const suggestions = [
-    "How many Maggi do I have?",
+    "Which products are in stock?",
     "Which products are low in stock?",
     "What should I restock?",
     "How much did I sell today?",
@@ -358,7 +358,7 @@ export function AIAssistant() {
               </span>
             </h2>
             <p className="text-xs text-gray-500">
-              Ask about stock, sales, profits, or command "Add 10 Maggi"
+              Ask about stock, sales, profits, or speak voice commands to update stock
             </p>
           </div>
         </div>
@@ -531,7 +531,7 @@ export function AIAssistant() {
                     </span>
                   ) : (
                     <span className="text-gray-600 italic font-normal">
-                      Speak now (e.g., "How many Maggi do I have?" or "Today's sales?")...
+                      Speak now (e.g., "Which products are low in stock?" or "Today's sales?")...
                     </span>
                   )}
                 </div>

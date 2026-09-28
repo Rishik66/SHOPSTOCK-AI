@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   Search, Plus, Minus, Trash2, ShoppingCart, CheckCircle, 
-  Mic, StopCircle, Sparkles, Volume2, Globe, AlertCircle, 
+  Mic, StopCircle, Volume2, Globe, AlertCircle, 
   ArrowRight, ArrowLeft, Check, Printer, Bot, RefreshCw, Barcode,
   Receipt, ChevronRight, X
 } from 'lucide-react';
@@ -536,46 +536,11 @@ export function Billing() {
           </div>
         )}
 
-        {/* Quick Voice & Barcode Test Chips + Manual Input */}
-        <div className="mt-3 pt-3 border-t border-white/15 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5">
-          {/* Spoken & Barcode Chips */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
-            <span className="text-[10px] font-bold text-blue-200 shrink-0 flex items-center gap-1 mr-1">
-              <Sparkles size={11} className="text-amber-300" /> Test:
-            </span>
-            <button
-              type="button"
-              onClick={() => handleBarcodeScanned({ id: '1', name: 'Parle-G Biscuits', category: 'Biscuits', stock: 25, purchasePrice: 8, sellingPrice: 10, minimumStock: 20, barcode: '8901719101038' })}
-              className="px-2.5 py-1 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded-lg transition-all flex items-center gap-1 shrink-0 shadow-sm text-xs"
-            >
-              <Barcode size={12} />
-              <span>Parle-G (₹10)</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleBarcodeScanned({ id: '2', name: 'Amul Milk', category: 'Dairy', stock: 15, purchasePrice: 54, sellingPrice: 60, minimumStock: 10, barcode: '8901262010047' })}
-              className="px-2.5 py-1 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded-lg transition-all flex items-center gap-1 shrink-0 shadow-sm text-xs"
-            >
-              <Barcode size={12} />
-              <span>Milk (₹60)</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => executeBillingCommand("2 biscuits and 3 milk packets")}
-              className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg border border-white/20 transition-all text-left flex items-center gap-1 shrink-0 text-xs"
-            >
-              <span>🎤</span>
-              <span>2 biscuit 3 milk</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => executeBillingCommand("Give bill")}
-              className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg border border-white/20 transition-all text-left flex items-center gap-1 shrink-0 text-xs"
-            >
-              <span>🧾</span>
-              <span>Give bill</span>
-            </button>
-          </div>
+        {/* Manual Voice Order Input Fallback */}
+        <div className="mt-3 pt-3 border-t border-white/15 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+          <p className="text-xs text-blue-100 flex items-center gap-1.5">
+            <span>Speak items & quantities to add directly to current bill.</span>
+          </p>
 
           {/* Quick Manual Voice Command Input */}
           <form onSubmit={handleManualVoiceSubmit} className="flex gap-1.5 shrink-0">
@@ -583,15 +548,15 @@ export function Billing() {
               type="text"
               value={voiceInput}
               onChange={(e) => setVoiceInput(e.target.value)}
-              placeholder="Type order: 2 biscuits 3 milk..."
-              className="bg-black/25 text-white placeholder-blue-200 border border-white/20 rounded-xl px-3 py-1.5 text-xs outline-none focus:bg-black/40 focus:border-white transition-all flex-1 md:w-56"
+              placeholder="e.g. 2 biscuits 3 milk..."
+              className="bg-black/25 text-white placeholder-blue-200 border border-white/20 rounded-xl px-3 py-1.5 text-xs outline-none focus:bg-black/40 focus:border-white transition-all flex-1 sm:w-60"
             />
             <button
               type="submit"
               disabled={!voiceInput.trim()}
-              className="px-3 py-1.5 bg-white text-blue-800 font-bold text-xs rounded-xl hover:bg-blue-50 disabled:opacity-40 transition-all shrink-0"
+              className="px-3.5 py-1.5 bg-white text-blue-800 font-bold text-xs rounded-xl hover:bg-blue-50 disabled:opacity-40 transition-all shrink-0"
             >
-              Add
+              Add to Bill
             </button>
           </form>
         </div>

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   Search, Plus, Edit2, Trash2, PlusCircle, MinusCircle, X, 
-  Mic, StopCircle, Bot, Sparkles, Volume2, Globe, AlertCircle, 
+  Mic, StopCircle, Bot, Volume2, Globe, AlertCircle, 
   CheckCircle, ArrowRight, PackagePlus, Box, Barcode 
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
@@ -516,47 +516,19 @@ export function Inventory() {
           </div>
         )}
 
-        {/* Quick Phrases + Manual Text Entry */}
-        <div className="mt-4 pt-3.5 border-t border-white/15 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-          {/* Quick Spoken Chips */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[11px] font-bold text-emerald-200 flex items-center gap-1 mr-1">
-              <Sparkles size={12} className="text-amber-300" /> Click to Test:
-            </span>
-            <button
-              type="button"
-              onClick={() => handleBarcodeScannedForInventory({ id: '1', name: 'Parle-G Biscuits', category: 'Biscuits', stock: 0, purchasePrice: 8, sellingPrice: 10, minimumStock: 20, barcode: '8901719101038' }, 25)}
-              className="px-2.5 py-1 bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-bold rounded-lg transition-all flex items-center gap-1 shadow-sm"
-            >
-              <Barcode size={13} />
-              <span>Scan Parle-G (+25)</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleBarcodeScannedForInventory({ id: '2', name: 'Amul Milk', category: 'Dairy', stock: 0, purchasePrice: 54, sellingPrice: 60, minimumStock: 10, barcode: '8901262010047' }, 10)}
-              className="px-2.5 py-1 bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-bold rounded-lg transition-all flex items-center gap-1 shadow-sm"
-            >
-              <Barcode size={13} />
-              <span>Scan Milk (+10)</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => executeVoiceRestock("Add 60 biscuit packets and 6 milk packets to the inventory")}
-              className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white text-xs font-medium rounded-lg border border-white/20 transition-all text-left flex items-center gap-1.5"
-            >
-              <span>📦</span>
-              <span>Add 60 biscuits 6 milk</span>
-            </button>
-          </div>
+        {/* Manual Text Entry for Voice Command */}
+        <div className="mt-4 pt-3.5 border-t border-white/15 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <p className="text-xs text-emerald-100 flex items-center gap-1.5">
+            <span>Speak or type items & quantities to update stock automatically.</span>
+          </p>
 
-          {/* Quick Manual Voice Command Input */}
           <form onSubmit={handleManualVoiceSubmit} className="flex gap-1.5 shrink-0">
             <input
               type="text"
               value={voiceInput}
               onChange={(e) => setVoiceInput(e.target.value)}
-              placeholder="Or type: Add 60 biscuits 6 milk..."
-              className="bg-black/25 text-white placeholder-emerald-200 border border-white/20 rounded-xl px-3 py-1.5 text-xs outline-none focus:bg-black/40 focus:border-white transition-all w-48 sm:w-60"
+              placeholder="e.g. Add 50 biscuit packets..."
+              className="bg-black/25 text-white placeholder-emerald-200 border border-white/20 rounded-xl px-3 py-1.5 text-xs outline-none focus:bg-black/40 focus:border-white transition-all w-full sm:w-64"
             />
             <button
               type="submit"
@@ -599,6 +571,26 @@ export function Inventory() {
           >
             <Plus size={16} /> {tr(language, 'inv_add')}
           </button>
+
+          {products.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm("Are you sure you want to remove all products from your inventory? This will clear all items.")) {
+                  setProducts([]);
+                  addNotification({
+                    type: 'info',
+                    message: 'Inventory cleared. All products removed.'
+                  });
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-2.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-xl font-bold text-xs transition-all cursor-pointer"
+              title="Clear all products"
+            >
+              <Trash2 size={15} />
+              <span className="hidden sm:inline">Clear All</span>
+            </button>
+          )}
         </div>
       </div>
 

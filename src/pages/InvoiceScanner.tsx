@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Camera, Upload, X, Check, FileText, Barcode, Plus, Minus, 
-  Sparkles, CheckCircle2, AlertTriangle, ArrowRight, Package, ShoppingCart
+  CheckCircle2, AlertTriangle, ArrowRight, Package, ShoppingCart
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { tr } from '../i18n';
@@ -9,7 +9,6 @@ import { Product } from '../types';
 import { 
   identifyProductByBarcode, 
   playBarcodeBeep, 
-  FMCG_BARCODE_CATALOG,
   BarcodeRecognitionResult 
 } from '../services/barcodeService';
 import { BarcodeScannerModal } from '../components/BarcodeScannerModal';
@@ -276,33 +275,7 @@ export function InvoiceScanner() {
                 </button>
               </form>
 
-              {/* 1-Click FMCG Test Barcodes */}
-              <div className="pt-2">
-                <div className="flex items-center justify-between text-xs font-bold text-gray-600 mb-2">
-                  <span className="flex items-center gap-1.5 text-amber-700">
-                    <Sparkles size={14} className="text-amber-500" />
-                    Quick 1-Click Test Barcodes (Indian FMCG Brands):
-                  </span>
-                  <span className="text-[11px] text-gray-400">Click to instantly test</span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {FMCG_BARCODE_CATALOG.map((item) => (
-                    <button
-                      key={item.barcode}
-                      type="button"
-                      onClick={() => {
-                        setBarcodeInput(item.barcode);
-                        handleBarcodeLookup(item.barcode);
-                      }}
-                      className="px-3 py-1.5 bg-slate-50 hover:bg-blue-50 hover:border-blue-300 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 transition-all flex items-center gap-1.5"
-                    >
-                      <span className="font-mono text-[10px] text-blue-600">{item.barcode.slice(-4)}</span>
-                      <span>{item.name}</span>
-                      <span className="text-emerald-700 font-bold">₹{item.sellingPrice}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
+
             </div>
 
             {/* Recognized Product Card */}
@@ -414,7 +387,7 @@ export function InvoiceScanner() {
                 <div className="h-48 flex flex-col items-center justify-center text-center text-gray-400 p-4">
                   <Barcode size={36} className="text-gray-300 mb-2" />
                   <p className="text-xs font-medium">No barcode scans recorded yet this session.</p>
-                  <p className="text-[11px] text-gray-400 mt-1">Use the camera or test barcodes on the left to add stock.</p>
+                  <p className="text-[11px] text-gray-400 mt-1">Use the camera or USB scanner gun to add stock.</p>
                 </div>
               ) : (
                 scanHistory.map((item, idx) => (
