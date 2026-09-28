@@ -174,13 +174,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setReady(true);
   }, []);
 
-  const login = (email: string, pass: string): { success: boolean; error?: string } => {
-    const cleanEmail = email.trim().toLowerCase();
+  const login = (identifier: string, pass: string): { success: boolean; error?: string } => {
+    const clean = identifier.trim().toLowerCase();
+    if (!clean) {
+      return { success: false, error: 'Please enter your email, owner name, or shop name.' };
+    }
+
     const users = getRegisteredUsers();
-    const user = users.find(u => u.email.toLowerCase() === cleanEmail);
+    
+    // Look up by email, ownerName, or shopName
+    const user = users.find(u => 
+      u.email.toLowerCase() === clean ||
+      u.ownerName.toLowerCase() === clean ||
+      u.shopName.toLowerCase() === clean ||
+      (clean.length >= 3 && (
+        u.email.toLowerCase().includes(clean) ||
+        u.ownerName.toLowerCase().includes(clean) ||
+        u.shopName.toLowerCase().includes(clean)
+      ))
+    );
 
     if (!user) {
-      return { success: false, error: 'No account found with this email. Please create an account.' };
+      return { 
+        success: false, 
+        error: `No account found for "${identifier}". Please check your spelling or switch to Create Account.` 
+      };
     }
 
     if (user.password !== pass) {
@@ -196,16 +214,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const signup = (data: Omit<UserAccount, 'id' | 'createdAt'>): { success: boolean; error?: string } => {
     const cleanEmail = data.email.trim().toLowerCase();
+    const cleanOwner = data.ownerName.trim();
+    const cleanShop = data.shopName.trim();
     const users = getRegisteredUsers();
 
-    if (users.some(u => u.email.toLowerCase() === cleanEmail)) {
-      return { success: false, error: 'An account with this email already exists. Please log in.' };
+    if (users.some(u => u.email.toLowerCase() === cleanEmail && u.email !== DEMO_USER.email)) {
+      return { success: false, error: 'An account with this email already exists. Please sign in.' };
     }
 
     const newUser: UserAccount = {
       ...data,
-      id: 'usr_' + Date.now().toString() + Math.random().toString(36).slice(2, 7),
+      shopName: cleanShop,
+      ownerName: cleanOwner,
       email: cleanEmail,
+      id: 'usr_' + Date.now().toString() + Math.random().toString(36).slice(2, 7),
       createdAt: new Date().toISOString()
     };
 

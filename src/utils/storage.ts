@@ -2,15 +2,17 @@ import { Product, Transaction, Language, UserAccount, ReviewItem } from '../type
 
 const KEYS = {
   USERS: 'ss_users',
+  USERS_BACKUP: 'ss_users_backup',
   CURRENT_USER: 'ss_current_user',
+  LAST_USER: 'ss_last_active_user',
   LANGUAGE: 'ss_language',
   REVIEWS: 'ss_reviews',
 };
 
-// Users management
+// Users management with dual persistence backup
 export function getRegisteredUsers(): UserAccount[] {
   try {
-    const raw = localStorage.getItem(KEYS.USERS);
+    const raw = localStorage.getItem(KEYS.USERS) || localStorage.getItem(KEYS.USERS_BACKUP);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
@@ -18,12 +20,18 @@ export function getRegisteredUsers(): UserAccount[] {
 }
 
 export function saveRegisteredUsers(users: UserAccount[]): void {
-  localStorage.setItem(KEYS.USERS, JSON.stringify(users));
+  try {
+    const serialized = JSON.stringify(users);
+    localStorage.setItem(KEYS.USERS, serialized);
+    localStorage.setItem(KEYS.USERS_BACKUP, serialized);
+  } catch (e) {
+    console.warn("Could not save users to storage:", e);
+  }
 }
 
 export function getCurrentUser(): UserAccount | null {
   try {
-    const raw = localStorage.getItem(KEYS.CURRENT_USER);
+    const raw = localStorage.getItem(KEYS.CURRENT_USER) || localStorage.getItem(KEYS.LAST_USER);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -32,9 +40,21 @@ export function getCurrentUser(): UserAccount | null {
 
 export function setCurrentUser(user: UserAccount | null): void {
   if (user) {
-    localStorage.setItem(KEYS.CURRENT_USER, JSON.stringify(user));
+    const serialized = JSON.stringify(user);
+    localStorage.setItem(KEYS.CURRENT_USER, serialized);
+    localStorage.setItem(KEYS.LAST_USER, serialized);
   } else {
     localStorage.removeItem(KEYS.CURRENT_USER);
+    // Keep LAST_USER for quick account auto-fill
+  }
+}
+
+export function getLastActiveUser(): UserAccount | null {
+  try {
+    const raw = localStorage.getItem(KEYS.LAST_USER);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
   }
 }
 

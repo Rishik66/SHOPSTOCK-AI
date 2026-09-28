@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { Store, User, Lock, Mail, ArrowRight, ShieldCheck, Sparkles, Globe } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Store, User, Lock, Mail, ArrowRight, ShieldCheck, Sparkles, Globe, Eye, EyeOff, Check, UserCheck } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { Language } from '../types';
+import { Language, UserAccount } from '../types';
+import { getRegisteredUsers } from '../utils/storage';
 
 export function AuthPage() {
   const { login, signup, loginDemo, language, setLanguage } = useApp();
@@ -9,8 +10,9 @@ export function AuthPage() {
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   
   // Login fields
-  const [loginEmail, setLoginEmail] = useState('');
+  const [loginIdentifier, setLoginIdentifier] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   // Signup fields
   const [shopName, setShopName] = useState('');
@@ -19,16 +21,27 @@ export function AuthPage() {
   const [signupPassword, setSignupPassword] = useState('');
   const [category, setCategory] = useState('Grocery / Kirana');
 
+  const [savedUsers, setSavedUsers] = useState<UserAccount[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const list = getRegisteredUsers();
+    setSavedUsers(list);
+    // Pre-fill with the first non-demo user if available
+    const nonDemo = list.find(u => u.id !== 'demo_ravi');
+    if (nonDemo) {
+      setLoginIdentifier(nonDemo.ownerName || nonDemo.email);
+    }
+  }, [mode]);
 
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!loginEmail.trim() || !loginPassword.trim()) {
-      setError('Please fill in both email and password.');
+    if (!loginIdentifier.trim() || !loginPassword.trim()) {
+      setError('Please enter both your name/email and password.');
       return;
     }
-    const res = login(loginEmail, loginPassword);
+    const res = login(loginIdentifier.trim(), loginPassword);
     if (!res.success) {
       setError(res.error || 'Failed to login');
     }
@@ -128,39 +141,95 @@ export function AuthPage() {
             </div>
           )}
 
+          {/* Saved Accounts on This Device */}
+          {mode === 'login' && savedUsers.filter(u => u.id !== 'demo_ravi').length > 0 && (
+            <div className="mb-5 p-3.5 bg-blue-50/80 border border-blue-200 rounded-2xl">
+              <div className="text-xs font-bold text-blue-900 mb-2 flex items-center gap-1.5">
+                <UserCheck size={15} className="text-blue-600" />
+                <span>Saved Accounts on this Device:</span>
+              </div>
+              <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                {savedUsers.filter(u => u.id !== 'demo_ravi').map(user => {
+                  const isSelected = loginIdentifier.toLowerCase() === user.ownerName.toLowerCase() || 
+                                     loginIdentifier.toLowerCase() === user.email.toLowerCase() ||
+                                     loginIdentifier.toLowerCase() === user.shopName.toLowerCase();
+                  return (
+                    <button
+                      key={user.id}
+                      type="button"
+                      onClick={() => {
+                        setLoginIdentifier(user.ownerName || user.email);
+                        setError(null);
+                      }}
+                      className={`w-full text-left p-2.5 rounded-xl border text-xs transition-all flex items-center justify-between ${
+                        isSelected
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                          : 'bg-white text-slate-800 border-slate-200 hover:border-blue-300'
+                      }`}
+                    >
+                      <div className="min-w-0 pr-2">
+                        <div className="font-bold flex items-center gap-1.5 truncate">
+                          <Store size={13} /> {user.shopName}
+                        </div>
+                        <div className={`text-[11px] truncate ${isSelected ? 'text-blue-100' : 'text-slate-500'}`}>
+                          Owner: {user.ownerName} ({user.email})
+                        </div>
+                      </div>
+                      <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded shrink-0 ${
+                        isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+                      }`}>
+                        {isSelected ? '✓ Selected' : 'Select'}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Sign In Form */}
           {mode === 'login' && (
             <form onSubmit={handleLoginSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Email Address
+                  Email, Owner Name, or Shop Name
                 </label>
                 <div className="relative">
-                  <Mail size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <User size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
-                    type="email"
+                    type="text"
                     required
-                    value={loginEmail}
-                    onChange={(e) => setLoginEmail(e.target.value)}
-                    placeholder="e.g. ravi@store.com"
+                    value={loginIdentifier}
+                    onChange={(e) => setLoginIdentifier(e.target.value)}
+                    placeholder="Enter your name, email, or shop name"
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-3 text-sm focus:ring-2 focus:ring-blue-600 focus:bg-white outline-none"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Password
-                </label>
+                <div className="flex justify-between items-center mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    Password
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1"
+                  >
+                    {showPassword ? <EyeOff size={13} /> : <Eye size={13} />}
+                    {showPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
                 <div className="relative">
                   <Lock size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     required
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-3 text-sm focus:ring-2 focus:ring-blue-600 focus:bg-white outline-none"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-10 py-3 text-sm focus:ring-2 focus:ring-blue-600 focus:bg-white outline-none"
                   />
                 </div>
               </div>
@@ -229,18 +298,28 @@ export function AuthPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Password
-                </label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    Password
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1"
+                  >
+                    {showPassword ? <EyeOff size={13} /> : <Eye size={13} />}
+                    {showPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
                 <div className="relative">
                   <Lock size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     required
                     value={signupPassword}
                     onChange={(e) => setSignupPassword(e.target.value)}
                     placeholder="Create a secure password"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-600 focus:bg-white outline-none"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-blue-600 focus:bg-white outline-none"
                   />
                 </div>
               </div>
