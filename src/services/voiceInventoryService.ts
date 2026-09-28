@@ -52,7 +52,7 @@ const NOISE_WORDS = [
   'kilo', 'kilos', 'kg', 'kgs', 'gram', 'grams', 'gm',
   'box', 'boxes', 'can', 'cans', 'dabba', 'dappe', 'bags', 'bag',
   'items', 'item', 'unit', 'units',
-  'of', 'for', 'to', 'in', 'please', 'kripya', 'doyacheyisi',
+  'of', 'in', 'please', 'kripya', 'doyacheyisi',
   'chahiye', 'kavali', 'beku', 'hai', 'undi', 'ide',
   'karo', 'cheyi', 'kodi', 'jodo', 'seri', 'chalao'
 ];
@@ -201,16 +201,23 @@ const KIRANA_CATALOG: Record<string, KiranaCatalogItem> = {
  * Normalizes speech text: converts word numbers to digits
  */
 function normalizeSpokenText(raw: string): string {
-  let text = raw.toLowerCase().trim();
+  let text = ' ' + raw.toLowerCase().trim() + ' ';
+
+  // Convert common speech recognition homophones for numbers
+  text = text.replace(/\b(?:to|too)\b(?=\s+[a-z])/gi, ' 2 ');
+  text = text.replace(/\b(?:for|fore)\b(?=\s+[a-z])/gi, ' 4 ');
+  text = text.replace(/\b(?:ate)\b(?=\s+[a-z])/gi, ' 8 ');
+  text = text.replace(/\b(?:tree|free)\b(?=\s+[a-z])/gi, ' 3 ');
+  text = text.replace(/\b(?:won|wan)\b(?=\s+[a-z])/gi, ' 1 ');
 
   Object.entries(NUMBER_WORDS)
     .sort((a, b) => b[0].length - a[0].length)
     .forEach(([word, num]) => {
       const regex = new RegExp(`\\b${word}\\b`, 'gi');
-      text = text.replace(regex, num.toString());
+      text = text.replace(regex, ` ${num} `);
     });
 
-  return text;
+  return text.replace(/\s+/g, ' ').trim();
 }
 
 /**

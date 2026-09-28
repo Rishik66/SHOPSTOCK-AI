@@ -26,6 +26,8 @@ export function AIAssistant() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
   const capturedTextRef = useRef<string>('');
+  const silenceTimerRef = useRef<any>(null);
+  const isListeningRef = useRef<boolean>(false);
 
   const getSR = () => {
     return (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -33,12 +35,12 @@ export function AIAssistant() {
 
   const srSupported = !!getSR();
 
-  // Match voice locale to UI language by default
+  // Match voice locale to UI language by default (default to Indian English)
   useEffect(() => {
     if (language === 'te') setSelectedVoiceLang('te-IN');
     else if (language === 'hi') setSelectedVoiceLang('hi-IN');
     else if (language === 'kn') setSelectedVoiceLang('kn-IN');
-    else setSelectedVoiceLang('en-US'); // en-US has 100% native server support on Windows Chrome
+    else setSelectedVoiceLang('en-IN');
   }, [language]);
 
   useEffect(() => {
@@ -74,16 +76,33 @@ export function AIAssistant() {
     }
   };
 
-  const stopVoice = () => {
+  const stopVoice = (shouldSend: boolean = false) => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    isListeningRef.current = false;
+    setIsListening(false);
+    setVoiceStatus('');
+
     if (recognitionRef.current) {
       try {
-        recognitionRef.current.abort();
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onend = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.stop();
       } catch {}
       recognitionRef.current = null;
     }
-    capturedTextRef.current = '';
-    setIsListening(false);
-    setVoiceStatus('');
+
+    if (shouldSend) {
+      const finalQuery = capturedTextRef.current.trim();
+      if (finalQuery) {
+        capturedTextRef.current = '';
+        setTranscriptPreview('');
+        handleSend(finalQuery);
+      }
+    }
   };
 
   const handleSend = (text: string) => {
@@ -120,19 +139,11 @@ export function AIAssistant() {
     }, 450);
   };
 
-  // Pure, Dedicated Speech Recognition without conflicting audio locks
-  const toggleVoice = () => {
+  const startVoice = () => {
+    stopVoice(false);
     setVoiceError(null);
     setTranscriptPreview('');
     capturedTextRef.current = '';
-
-    if (isListening) {
-      if (recognitionRef.current) {
-        try { recognitionRef.current.stop(); } catch {}
-      }
-      setIsListening(false);
-      return;
-    }
 
     if (!srSupported) {
       setVoiceError("Voice recognition requires Google Chrome or Microsoft Edge. Please open this site in Google Chrome.");
@@ -143,14 +154,15 @@ export function AIAssistant() {
     const recognition = new SR();
     recognitionRef.current = recognition;
 
-    recognition.lang = selectedVoiceLang;
-    recognition.continuous = false; // Single utterance mode is most reliable in Chrome
+    recognition.lang = selectedVoiceLang || 'en-IN';
+    recognition.continuous = true; // DO NOT cut off prematurely
     recognition.interimResults = true; // Live typing as you speak
-    recognition.maxAlternatives = 1;
+    recognition.maxAlternatives = 3;
 
     recognition.onstart = () => {
+      isListeningRef.current = true;
       setIsListening(true);
-      setVoiceStatus('Listening... Speak now');
+      setVoiceStatus('Listening carefully... Speak at your own speed');
       setVoiceError(null);
     };
 
@@ -158,54 +170,53 @@ export function AIAssistant() {
       setVoiceStatus('Microphone active — listening...');
     };
 
-    recognition.onsoundstart = () => {
-      setVoiceStatus('Sound detected! Hearing your voice...');
-    };
-
-    recognition.onspeechstart = () => {
-      setVoiceStatus('Transcribing your speech...');
-    };
-
     recognition.onresult = (event: any) => {
       let speech = '';
       for (let i = 0; i < event.results.length; ++i) {
-        speech += event.results[i][0].transcript;
+        const itemText = event.results[i][0].transcript.trim();
+        if (itemText) {
+          speech += (speech ? ' ' : '') + itemText; // Space-delimited!
+        }
       }
       const clean = speech.trim();
       if (clean) {
         capturedTextRef.current = clean;
         setTranscriptPreview(clean);
         setInput(clean);
-        setVoiceStatus(`Recognized: "${clean}"`);
+        setVoiceStatus(`Heard: "${clean}"`);
       }
+
+      // Reset silence grace period timer: 2.2 seconds of clear silence after speaking
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+      }
+      silenceTimerRef.current = setTimeout(() => {
+        stopVoice(true);
+      }, 2200);
     };
 
     recognition.onerror = (event: any) => {
       console.warn("Speech recognition error:", event.error);
-      setIsListening(false);
-      setVoiceStatus('');
-
       if (event.error === 'no-speech') {
-        setVoiceError("No speech detected. Please speak closer to your microphone or click 'Test Hardware Mic' below.");
-      } else if (event.error === 'not-allowed') {
+        return; // Continuous mode handles silence gracefully
+      }
+      if (event.error === 'not-allowed') {
         setVoiceError("Microphone permission denied. Click the lock/tune icon next to https:// in your address bar and set Microphone to Allow.");
-      } else if (event.error === 'audio-capture') {
-        setVoiceError("No microphone found. Please check your Windows Sound Settings to ensure a working microphone is selected.");
-      } else if (event.error === 'network') {
-        setVoiceError("Speech recognition server connection timed out. Try switching to English (US) mode or typing your query.");
-      } else {
+        stopVoice(false);
+      } else if (event.error !== 'aborted') {
         setVoiceError(`Voice notice: ${event.error}. You can also type or use the quick query chips.`);
       }
     };
 
     recognition.onend = () => {
-      setIsListening(false);
-      setVoiceStatus('');
-      const finalQuery = capturedTextRef.current.trim();
-      if (finalQuery) {
-        capturedTextRef.current = '';
-        setTranscriptPreview('');
-        handleSend(finalQuery);
+      if (isListeningRef.current) {
+        const finalQuery = capturedTextRef.current.trim();
+        if (finalQuery) {
+          stopVoice(true);
+        } else {
+          setIsListening(false);
+          isListeningRef.current = false;
+        }
       }
     };
 
@@ -215,6 +226,15 @@ export function AIAssistant() {
       console.error("Recognition start failed:", err);
       setIsListening(false);
       setVoiceError("Could not start microphone. Click the mic icon again to retry.");
+    }
+  };
+
+  // Pure, Dedicated Speech Recognition without conflicting audio locks
+  const toggleVoice = () => {
+    if (isListening) {
+      stopVoice(true);
+    } else {
+      startVoice();
     }
   };
 

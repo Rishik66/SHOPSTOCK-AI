@@ -31,22 +31,27 @@ export function Billing() {
   const [voiceFeedback, setVoiceFeedback] = useState<string | null>(null);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [voiceInput, setVoiceInput] = useState('');
-  const [voiceLang, setVoiceLang] = useState('en-US');
+  const [voiceLang, setVoiceLang] = useState('en-IN');
 
   const recognitionRef = useRef<any>(null);
   const capturedTextRef = useRef('');
+  const silenceTimerRef = useRef<any>(null);
+  const isListeningRef = useRef<boolean>(false);
 
-  // Synchronize default voice locale with app language
+  // Synchronize default voice locale with app language (default to Indian English for Kirana shops)
   useEffect(() => {
     if (language === 'te') setVoiceLang('te-IN');
     else if (language === 'hi') setVoiceLang('hi-IN');
     else if (language === 'kn') setVoiceLang('kn-IN');
-    else setVoiceLang('en-US');
+    else setVoiceLang('en-IN');
   }, [language]);
 
-  // Clean up mic on unmount
+  // Clean up mic and timer on unmount
   useEffect(() => {
     return () => {
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+      }
       if (recognitionRef.current) {
         try { recognitionRef.current.abort(); } catch {}
       }
@@ -252,20 +257,41 @@ export function Billing() {
     }
   };
 
-  // Toggle voice recognition
-  const toggleVoiceBilling = () => {
+  // Stop voice billing with optional execution
+  const stopVoiceBilling = (shouldExecute: boolean = true) => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    isListeningRef.current = false;
+    setIsListening(false);
+
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onend = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.stop();
+      } catch {}
+      recognitionRef.current = null;
+    }
+
+    if (shouldExecute) {
+      const text = capturedTextRef.current.trim();
+      if (text) {
+        capturedTextRef.current = '';
+        executeBillingCommand(text);
+      }
+    }
+  };
+
+  // Start voice billing with continuous listening & generous 2.2s silence buffer
+  const startVoiceBilling = () => {
+    stopVoiceBilling(false);
     setVoiceError(null);
     setVoiceFeedback(null);
     setVoiceTranscript('');
     capturedTextRef.current = '';
-
-    if (isListening) {
-      if (recognitionRef.current) {
-        try { recognitionRef.current.stop(); } catch {}
-      }
-      setIsListening(false);
-      return;
-    }
 
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) {
@@ -275,12 +301,13 @@ export function Billing() {
 
     const recognition = new SR();
     recognitionRef.current = recognition;
-    recognition.lang = voiceLang;
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
+    recognition.lang = voiceLang || 'en-IN';
+    recognition.continuous = true; // DO NOT cut off on small pauses
+    recognition.interimResults = true; // Live typing as you speak
+    recognition.maxAlternatives = 3;
 
     recognition.onstart = () => {
+      isListeningRef.current = true;
       setIsListening(true);
       setVoiceError(null);
     };
@@ -288,32 +315,52 @@ export function Billing() {
     recognition.onresult = (event: any) => {
       let speech = '';
       for (let i = 0; i < event.results.length; ++i) {
-        speech += event.results[i][0].transcript;
+        const itemText = event.results[i][0].transcript.trim();
+        if (itemText) {
+          speech += (speech ? ' ' : '') + itemText; // Space-delimited to prevent word collision!
+        }
       }
       const clean = speech.trim();
       if (clean) {
         capturedTextRef.current = clean;
         setVoiceTranscript(clean);
       }
+
+      // Reset silence grace period timer: gives user a full 2.2 seconds of pause to think or speak next items
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+      }
+
+      silenceTimerRef.current = setTimeout(() => {
+        // User has been completely silent for 2.2 seconds after speaking
+        stopVoiceBilling(true);
+      }, 2200);
     };
 
     recognition.onerror = (event: any) => {
       console.warn('Voice billing error:', event.error);
-      setIsListening(false);
       if (event.error === 'no-speech') {
-        setVoiceError('No speech detected. Please speak closer to your microphone.');
-      } else if (event.error === 'not-allowed') {
+        // In continuous mode, no-speech is just silence waiting for user to speak
+        return;
+      }
+      if (event.error === 'not-allowed') {
         setVoiceError('Microphone permission blocked. Please allow mic access in your browser bar.');
-      } else {
-        setVoiceError(`Voice error: ${event.error}`);
+        stopVoiceBilling(false);
+      } else if (event.error !== 'aborted') {
+        setVoiceError(`Voice notice: ${event.error}`);
       }
     };
 
     recognition.onend = () => {
-      setIsListening(false);
-      const text = capturedTextRef.current.trim();
-      if (text) {
-        executeBillingCommand(text);
+      // If browser terminates stream while user was still speaking
+      if (isListeningRef.current) {
+        const text = capturedTextRef.current.trim();
+        if (text) {
+          stopVoiceBilling(true);
+        } else {
+          setIsListening(false);
+          isListeningRef.current = false;
+        }
       }
     };
 
@@ -321,7 +368,17 @@ export function Billing() {
       recognition.start();
     } catch (e: any) {
       setVoiceError('Could not start microphone. Please refresh or check browser permissions.');
-      setIsListening(false);
+      stopVoiceBilling(false);
+    }
+  };
+
+  // Toggle voice recognition
+  const toggleVoiceBilling = () => {
+    if (isListening) {
+      // User tapped button while listening -> conclude and process immediately!
+      stopVoiceBilling(true);
+    } else {
+      startVoiceBilling();
     }
   };
 
@@ -412,36 +469,41 @@ export function Billing() {
 
         {/* Live Listening Banner */}
         {isListening && (
-          <div className="mt-3 p-3 bg-red-600/90 backdrop-blur-md border border-red-300/40 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 animate-fade-in shadow-inner">
-            <div className="flex items-center gap-2.5">
-              <span className="relative flex h-3 w-3 shrink-0">
+          <div className="mt-3 p-3.5 bg-gradient-to-r from-red-600 to-rose-700 backdrop-blur-md border border-red-300/40 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-fade-in shadow-lg">
+            <div className="flex items-center gap-3">
+              <span className="relative flex h-3.5 w-3.5 shrink-0">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-80"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
+                <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-white"></span>
               </span>
               <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-red-100 block">
-                  Listening to order... Speak now!
+                <span className="text-[10px] font-bold uppercase tracking-wider text-red-100 flex items-center gap-1.5">
+                  <span>🎙️ Listening carefully...</span>
+                  <span className="text-white/80 font-normal">Speak at your natural pace (we won't cut you off)</span>
                 </span>
-                <span className="text-xs sm:text-sm font-black text-white">
+                <span className="text-xs sm:text-sm font-black text-white mt-0.5 block">
                   {voiceTranscript ? `"${voiceTranscript}"` : 'Say e.g. "2 biscuits and 3 milk packets"...'}
                 </span>
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                const text = capturedTextRef.current.trim() || voiceTranscript.trim();
-                if (recognitionRef.current) {
-                  try { recognitionRef.current.stop(); } catch {}
-                }
-                setIsListening(false);
-                if (text) executeBillingCommand(text);
-              }}
-              className="px-3 py-1.5 bg-white text-red-700 font-bold text-xs rounded-lg shadow-sm hover:bg-red-50 self-end sm:self-center"
-            >
-              ✓ Add to Bill Now
-            </button>
+            <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+              <button
+                type="button"
+                onClick={() => stopVoiceBilling(true)}
+                className="px-3.5 py-1.5 bg-white text-red-700 hover:bg-red-50 font-black text-xs rounded-xl shadow-md transition-all active:scale-95 flex items-center gap-1 cursor-pointer"
+                title="Finish speaking and process immediately"
+              >
+                <span>✓ Done Speaking</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => stopVoiceBilling(false)}
+                className="px-2.5 py-1.5 bg-black/20 hover:bg-black/30 text-white font-bold text-xs rounded-xl transition-all cursor-pointer"
+                title="Cancel voice input"
+              >
+                <X size={14} />
+              </button>
+            </div>
           </div>
         )}
 
