@@ -47,6 +47,23 @@ export function processQuery(
 ): AIResponse {
   const q = query.toLowerCase().trim();
 
+  // GREETINGS
+  if (['hello', 'hi', 'hey', 'namaste', 'namaskaram', 'namaskara', 'good morning', 'good evening', 'good afternoon'].some(g => q === g || q.startsWith(g + ' ') || q.endsWith(' ' + g))) {
+    return { text: tr(language, 'ai_greeting') };
+  }
+
+  // HELP / CAPABILITIES
+  if (q.includes('help') || q.includes('what can you do') || q.includes('kya kar sakte') || q.includes('em cheyaglavu')) {
+    const helpMsg = language === 'te' 
+      ? 'నేను మీకు స్టాక్ లెక్కింపు, నేటి అమ్మకాలు, లాభాలు, బెస్ట్ సెల్లర్లు మరియు స్టాక్ జోడించడంలో సహాయం చేయగలను. ఉదాహరణకు: "How many Maggi do I have?" లేదా "Today sales".'
+      : language === 'hi'
+      ? 'मैं आपको स्टॉक की जांच, आज की बिक्री, लाभ, सबसे ज्यादा बिकने वाले सामान और स्टॉक जोड़ने/हटाने में मदद कर सकता हूँ। उदाहरण: "How many Maggi do I have?" या "Today sales"।'
+      : language === 'kn'
+      ? 'ನಾನು ನಿಮಗೆ ದಾಸ್ತಾನು ಪರಿಶೀಲನೆ, ಇಂದಿನ ಮಾರಾಟ, ಲಾಭ ಮತ್ತು ದಾಸ್ತಾನು ಸೇರಿಸಲು/ತೆಗೆದುಹಾಕಲು ಸಹಾಯ ಮಾಡಬಲ್ಲೆ. ಉದಾಹರಣೆಗೆ: "How many Maggi do I have?" ಅಥವಾ "Today sales".'
+      : 'I can help you check product stock, view today\'s sales and profits, see top sellers, or add/remove stock. Try asking: "How many Maggi do I have?", "Today sales", or "Add 10 Maggi".';
+    return { text: helpMsg };
+  }
+
   // ADD_STOCK intent
   const addMatch = q.match(/(?:add|jodo|seri|chalao)\s+(\d+)\s+(.+)/i) ||
                    q.match(/(\d+)\s+(.+?)\s+(?:add|jodo|seri)/i) ||

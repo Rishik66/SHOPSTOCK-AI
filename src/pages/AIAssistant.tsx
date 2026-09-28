@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Mic, Bot, User, CheckCircle, XCircle, Volume2, Globe, AlertCircle, Sparkles, StopCircle, RefreshCw } from 'lucide-react';
+import { Send, Mic, Bot, User, CheckCircle, XCircle, Volume2, Globe, AlertCircle, Sparkles, StopCircle, Check, HelpCircle, Activity } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { tr } from '../i18n';
 import { AIMessage, AIAction } from '../types';
@@ -11,18 +11,21 @@ export function AIAssistant() {
   const [messages, setMessages] = useState<AIMessage[]>([]);
   const [input, setInput] = useState('');
   const [isListening, setIsListening] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState<string>('');
   const [thinking, setThinking] = useState(false);
   const [pendingAction, setPendingAction] = useState<AIAction | null>(null);
   const [transcriptPreview, setTranscriptPreview] = useState('');
   const [voiceError, setVoiceError] = useState<string | null>(null);
-  const [audioLevel, setAudioLevel] = useState<number>(0);
-  const [selectedVoiceLang, setSelectedVoiceLang] = useState<string>('en-IN');
+  const [selectedVoiceLang, setSelectedVoiceLang] = useState<string>('en-US');
+
+  // Mic Hardware Diagnostic Test State
+  const [testingMic, setTestingMic] = useState<boolean>(false);
+  const [testVolume, setTestVolume] = useState<number>(0);
+  const [testResult, setTestResult] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const animFrameRef = useRef<number | null>(null);
+  const capturedTextRef = useRef<string>('');
 
   const getSR = () => {
     return (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -35,7 +38,7 @@ export function AIAssistant() {
     if (language === 'te') setSelectedVoiceLang('te-IN');
     else if (language === 'hi') setSelectedVoiceLang('hi-IN');
     else if (language === 'kn') setSelectedVoiceLang('kn-IN');
-    else setSelectedVoiceLang('en-IN');
+    else setSelectedVoiceLang('en-US'); // en-US has 100% native server support on Windows Chrome
   }, [language]);
 
   useEffect(() => {
@@ -53,7 +56,7 @@ export function AIAssistant() {
 
   useEffect(() => {
     return () => {
-      stopListening();
+      stopVoice();
     };
   }, []);
 
@@ -71,26 +74,16 @@ export function AIAssistant() {
     }
   };
 
-  const stopListening = () => {
-    if (animFrameRef.current) {
-      cancelAnimationFrame(animFrameRef.current);
-      animFrameRef.current = null;
-    }
-    if (audioContextRef.current) {
-      try { audioContextRef.current.close(); } catch {}
-      audioContextRef.current = null;
-    }
-    if (mediaStreamRef.current) {
-      try {
-        mediaStreamRef.current.getTracks().forEach(t => t.stop());
-      } catch {}
-      mediaStreamRef.current = null;
-    }
+  const stopVoice = () => {
     if (recognitionRef.current) {
-      try { recognitionRef.current.stop(); } catch {}
+      try {
+        recognitionRef.current.abort();
+      } catch {}
+      recognitionRef.current = null;
     }
+    capturedTextRef.current = '';
     setIsListening(false);
-    setAudioLevel(0);
+    setVoiceStatus('');
   };
 
   const handleSend = (text: string) => {
@@ -124,112 +117,95 @@ export function AIAssistant() {
       if (response.action) {
         setPendingAction(response.action);
       }
-    }, 500);
+    }, 450);
   };
 
-  const toggleVoice = async () => {
+  // Pure, Dedicated Speech Recognition without conflicting audio locks
+  const toggleVoice = () => {
     setVoiceError(null);
     setTranscriptPreview('');
+    capturedTextRef.current = '';
 
     if (isListening) {
-      stopListening();
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch {}
+      }
+      setIsListening(false);
       return;
     }
 
     if (!srSupported) {
-      setVoiceError("Voice recognition requires Google Chrome or Microsoft Edge. Please open this site in Chrome or Edge.");
+      setVoiceError("Voice recognition requires Google Chrome or Microsoft Edge. Please open this site in Google Chrome.");
       return;
     }
 
-    // 1. Hardware Microphone Verification & Decibel Meter
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaStreamRef.current = stream;
-
-      try {
-        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-        if (AudioCtx) {
-          const audioCtx = new AudioCtx();
-          audioContextRef.current = audioCtx;
-          const source = audioCtx.createMediaStreamSource(stream);
-          const analyser = audioCtx.createAnalyser();
-          analyser.fftSize = 128;
-          source.connect(analyser);
-
-          const dataArray = new Uint8Array(analyser.frequencyBinCount);
-          const updateAudioLevel = () => {
-            analyser.getByteFrequencyData(dataArray);
-            let sum = 0;
-            for (let i = 0; i < dataArray.length; i++) {
-              sum += dataArray[i];
-            }
-            const avg = sum / dataArray.length;
-            const normalized = Math.min(100, Math.round((avg / 64) * 100));
-            setAudioLevel(normalized);
-            animFrameRef.current = requestAnimationFrame(updateAudioLevel);
-          };
-          updateAudioLevel();
-        }
-      } catch (audioErr) {
-        console.warn("Visualizer init skipped:", audioErr);
-      }
-    } catch (micErr: any) {
-      console.warn("Microphone access blocked:", micErr);
-      setVoiceError("Microphone access blocked. Click the lock/settings icon in the browser URL bar and allow Microphone.");
-      return;
-    }
-
-    // 2. Initialize Speech Recognition
     const SR = getSR();
     const recognition = new SR();
     recognitionRef.current = recognition;
 
     recognition.lang = selectedVoiceLang;
-    recognition.continuous = false; // Reliable single utterance recognition in Chrome
-    recognition.interimResults = true; // Live typing preview as user speaks
+    recognition.continuous = false; // Single utterance mode is most reliable in Chrome
+    recognition.interimResults = true; // Live typing as you speak
     recognition.maxAlternatives = 1;
-
-    let capturedText = '';
 
     recognition.onstart = () => {
       setIsListening(true);
+      setVoiceStatus('Listening... Speak now');
       setVoiceError(null);
     };
 
+    recognition.onaudiostart = () => {
+      setVoiceStatus('Microphone active — listening...');
+    };
+
+    recognition.onsoundstart = () => {
+      setVoiceStatus('Sound detected! Hearing your voice...');
+    };
+
+    recognition.onspeechstart = () => {
+      setVoiceStatus('Transcribing your speech...');
+    };
+
     recognition.onresult = (event: any) => {
-      let accumulated = '';
+      let speech = '';
       for (let i = 0; i < event.results.length; ++i) {
-        accumulated += event.results[i][0].transcript;
+        speech += event.results[i][0].transcript;
       }
-      const activeText = accumulated.trim();
-      if (activeText) {
-        capturedText = activeText;
-        setTranscriptPreview(activeText);
-        setInput(activeText);
+      const clean = speech.trim();
+      if (clean) {
+        capturedTextRef.current = clean;
+        setTranscriptPreview(clean);
+        setInput(clean);
+        setVoiceStatus(`Recognized: "${clean}"`);
       }
     };
 
     recognition.onerror = (event: any) => {
       console.warn("Speech recognition error:", event.error);
-      stopListening();
+      setIsListening(false);
+      setVoiceStatus('');
+
       if (event.error === 'no-speech') {
-        setVoiceError("No speech was heard. Speak closer to the microphone, or try switching to 'English (US)' mode.");
+        setVoiceError("No speech detected. Please speak closer to your microphone or click 'Test Hardware Mic' below.");
       } else if (event.error === 'not-allowed') {
-        setVoiceError("Microphone permission was denied. Click the lock icon in Chrome's address bar to enable it.");
+        setVoiceError("Microphone permission denied. Click the lock/tune icon next to https:// in your address bar and set Microphone to Allow.");
       } else if (event.error === 'audio-capture') {
-        setVoiceError("No audio input detected. Please check your Windows Microphone device in Sound Settings.");
+        setVoiceError("No microphone found. Please check your Windows Sound Settings to ensure a working microphone is selected.");
       } else if (event.error === 'network') {
-        setVoiceError("Speech recognition server network error. Try switching voice language or typing your question.");
+        setVoiceError("Speech recognition server connection timed out. Try switching to English (US) mode or typing your query.");
       } else {
-        setVoiceError(`Speech error (${event.error}). Try again or type below.`);
+        setVoiceError(`Voice notice: ${event.error}. You can also type or use the quick query chips.`);
       }
     };
 
     recognition.onend = () => {
-      stopListening();
-      if (capturedText.trim()) {
-        handleSend(capturedText.trim());
+      setIsListening(false);
+      setVoiceStatus('');
+      const finalQuery = capturedTextRef.current.trim();
+      if (finalQuery) {
+        capturedTextRef.current = '';
         setTranscriptPreview('');
+        handleSend(finalQuery);
       }
     };
 
@@ -237,8 +213,72 @@ export function AIAssistant() {
       recognition.start();
     } catch (err: any) {
       console.error("Recognition start failed:", err);
-      stopListening();
-      setVoiceError("Could not start speech recognition. Please try clicking the mic again.");
+      setIsListening(false);
+      setVoiceError("Could not start microphone. Click the mic icon again to retry.");
+    }
+  };
+
+  // Hardware Microphone Diagnostic Tool
+  const runMicDiagnostic = async () => {
+    setTestingMic(true);
+    setTestResult(null);
+    setTestVolume(0);
+
+    let stream: MediaStream | null = null;
+    let audioCtx: AudioContext | null = null;
+    let animId: number | null = null;
+    let peakVolume = 0;
+
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      audioCtx = new AudioCtx();
+      const source = audioCtx.createMediaStreamSource(stream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      const startTime = Date.now();
+
+      const measure = () => {
+        analyser.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          sum += dataArray[i];
+        }
+        const avg = sum / dataArray.length;
+        const norm = Math.min(100, Math.round((avg / 64) * 100));
+        setTestVolume(norm);
+        if (norm > peakVolume) peakVolume = norm;
+
+        // Run for 3.5 seconds
+        if (Date.now() - startTime < 3500) {
+          animId = requestAnimationFrame(measure);
+        } else {
+          // Finished testing! Clean up stream immediately so SpeechRecognition has free mic
+          if (animId) cancelAnimationFrame(animId);
+          if (audioCtx) {
+            try { audioCtx.close(); } catch {}
+          }
+          if (stream) {
+            stream.getTracks().forEach(t => t.stop());
+          }
+          setTestingMic(false);
+          setTestVolume(0);
+
+          if (peakVolume > 8) {
+            setTestResult(`✅ Microphone is working perfectly! Peak volume detected: ${peakVolume}%. Speech Recognition is ready.`);
+          } else {
+            setTestResult(`⚠️ Microphone detected 0% sound! Your microphone is muted in Windows, or input volume is 0%. Go to Windows Settings > Sound > Input volume.`);
+          }
+        }
+      };
+
+      measure();
+    } catch (e: any) {
+      setTestingMic(false);
+      setTestResult("❌ Could not access microphone. Chrome has blocked mic permission. Click the lock icon in the URL bar to allow it.");
     }
   };
 
@@ -294,32 +334,81 @@ export function AIAssistant() {
             <h2 className="font-bold text-base text-gray-900 flex items-center gap-2">
               {tr(language, 'ai_title')}
               <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
-                Live AI
+                Voice & Text AI
               </span>
             </h2>
             <p className="text-xs text-gray-500">
-              Ask about stock, sales, or say "Add 20 Maggi"
+              Ask about stock, sales, profits, or command "Add 10 Maggi"
             </p>
           </div>
         </div>
 
-        {/* Voice Language Selector */}
-        <div className="flex items-center gap-1.5 bg-white border border-gray-200 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-gray-700 shadow-sm">
-          <Globe size={14} className="text-blue-600" />
-          <span className="text-gray-400">Mic Lang:</span>
-          <select
-            value={selectedVoiceLang}
-            onChange={(e) => setSelectedVoiceLang(e.target.value)}
-            className="bg-transparent font-bold text-blue-700 outline-none cursor-pointer"
+        {/* Controls: Voice Language + Mic Hardware Diagnostic */}
+        <div className="flex items-center gap-2">
+          {/* Hardware Diagnostic Button */}
+          <button
+            type="button"
+            onClick={runMicDiagnostic}
+            disabled={testingMic}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 shadow-sm transition-all"
+            title="Test if your physical microphone is receiving sound"
           >
-            <option value="en-IN">🇮🇳 English (India)</option>
-            <option value="en-US">🇺🇸 English (US)</option>
-            <option value="hi-IN">🇮🇳 हिन्दी (Hindi)</option>
-            <option value="te-IN">🇮🇳 తెలుగు (Telugu)</option>
-            <option value="kn-IN">🇮🇳 ಕನ್ನಡ (Kannada)</option>
-          </select>
+            <Activity size={14} className={testingMic ? 'text-red-500 animate-spin' : 'text-blue-600'} />
+            <span>{testingMic ? 'Testing Mic...' : 'Test Mic Hardware'}</span>
+          </button>
+
+          {/* Voice Language Selector */}
+          <div className="flex items-center gap-1.5 bg-white border border-gray-200 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-gray-700 shadow-sm">
+            <Globe size={14} className="text-blue-600" />
+            <select
+              value={selectedVoiceLang}
+              onChange={(e) => setSelectedVoiceLang(e.target.value)}
+              className="bg-transparent font-bold text-blue-700 outline-none cursor-pointer"
+            >
+              <option value="en-US">🇺🇸 English (US) [Recommended]</option>
+              <option value="en-IN">🇮🇳 English (India)</option>
+              <option value="hi-IN">🇮🇳 हिन्दी (Hindi)</option>
+              <option value="te-IN">🇮🇳 తెలుగు (Telugu)</option>
+              <option value="kn-IN">🇮🇳 ಕನ್ನಡ (Kannada)</option>
+            </select>
+          </div>
         </div>
       </div>
+
+      {/* Hardware Diagnostic Live Modal/Banner */}
+      {testingMic && (
+        <div className="bg-blue-600 text-white p-3.5 flex items-center justify-between gap-4 animate-fade-in shadow-md">
+          <div className="flex items-center gap-3">
+            <span className="relative flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
+            </span>
+            <div className="text-xs">
+              <span className="font-bold uppercase tracking-wider block">Testing Physical Microphone...</span>
+              <span>Say "Hello" or make a sound into your microphone right now!</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold font-mono">{testVolume}% Volume</span>
+            <div className="w-24 h-3 bg-blue-800 rounded-full overflow-hidden p-0.5 border border-white/30">
+              <div
+                className="h-full bg-emerald-400 rounded-full transition-all duration-75"
+                style={{ width: `${testVolume}%` }}
+              ></div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Diagnostic Result Banner */}
+      {testResult && (
+        <div className={`p-3 text-xs flex items-center justify-between gap-2 border-b font-medium ${
+          testResult.startsWith('✅') ? 'bg-emerald-50 text-emerald-900 border-emerald-200' : 'bg-amber-50 text-amber-900 border-amber-200'
+        }`}>
+          <span>{testResult}</span>
+          <button onClick={() => setTestResult(null)} className="font-bold px-2 py-0.5 hover:opacity-75">✕</button>
+        </div>
+      )}
       
       {/* Messages Scroll Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50">
@@ -333,7 +422,17 @@ export function AIAssistant() {
                   <Bot size={18} />
                 </div>
               )}
-              <div className="whitespace-pre-line text-sm leading-relaxed">{msg.text}</div>
+              <div className="flex-1 whitespace-pre-line text-sm leading-relaxed">{msg.text}</div>
+              {msg.role === 'assistant' && (
+                <button
+                  type="button"
+                  onClick={() => speak(msg.text)}
+                  title="Speak response aloud"
+                  className="text-gray-400 hover:text-blue-600 self-start p-1 rounded-md transition-colors"
+                >
+                  <Volume2 size={16} />
+                </button>
+              )}
             </div>
           </div>
         ))}
@@ -380,7 +479,7 @@ export function AIAssistant() {
         {/* Suggested Quick Questions */}
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-[11px] font-bold text-gray-400 flex items-center gap-1 mr-1">
-            <Sparkles size={12} className="text-amber-500" /> Suggestions:
+            <Sparkles size={12} className="text-amber-500" /> Click to Ask:
           </span>
           {suggestions.map((s, i) => (
             <button
@@ -393,31 +492,28 @@ export function AIAssistant() {
           ))}
         </div>
 
-        {/* Live Audio & Voice Listening Banner */}
+        {/* Live Speech Recognition Listening Banner */}
         {isListening && (
-          <div className="bg-gradient-to-r from-red-50 to-orange-50 border-2 border-red-300 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
+          <div className="bg-gradient-to-r from-red-50 to-orange-50 border-2 border-red-400 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg animate-pulse">
             <div className="flex items-center gap-3 min-w-0">
-              <span className="relative flex h-3.5 w-3.5 shrink-0">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-red-600"></span>
+              <span className="relative flex h-4 w-4 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-4 w-4 bg-red-600"></span>
               </span>
               <div className="min-w-0">
                 <div className="text-xs font-black text-red-900 uppercase tracking-wider flex items-center gap-2">
-                  <span>Listening ({selectedVoiceLang})... Speak clearly</span>
-                  {/* Live decibel level bar */}
-                  <div className="flex items-center gap-0.5 h-3 ml-2">
-                    {[15, 35, 55, 75, 95].map((thresh, idx) => (
-                      <span
-                        key={idx}
-                        className={`w-1 rounded-full transition-all duration-75 ${
-                          audioLevel >= thresh ? 'bg-emerald-500 h-3.5' : 'bg-gray-300 h-1.5'
-                        }`}
-                      />
-                    ))}
-                  </div>
+                  <span>{voiceStatus || `Listening (${selectedVoiceLang})... Speak clearly`}</span>
                 </div>
-                <div className="text-sm font-semibold text-gray-800 italic truncate mt-0.5">
-                  {transcriptPreview || "Speak your question now (e.g. 'How many Maggi do I have?')..."}
+                <div className="text-sm font-bold text-gray-900 mt-1">
+                  {transcriptPreview ? (
+                    <span className="text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                      "{transcriptPreview}"
+                    </span>
+                  ) : (
+                    <span className="text-gray-600 italic font-normal">
+                      Speak now (e.g., "How many Maggi do I have?" or "Today's sales?")...
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -425,17 +521,24 @@ export function AIAssistant() {
             <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
               <button
                 type="button"
-                onClick={stopListening}
-                className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all"
+                onClick={() => {
+                  const text = capturedTextRef.current.trim() || transcriptPreview.trim() || input.trim();
+                  stopVoice();
+                  if (text) {
+                    handleSend(text);
+                    setTranscriptPreview('');
+                  }
+                }}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center gap-1.5"
               >
-                Done / Process
+                <Check size={14} /> Send Voice Query
               </button>
               <button
                 type="button"
                 onClick={() => {
-                  stopListening();
+                  capturedTextRef.current = '';
                   setTranscriptPreview('');
-                  setInput('');
+                  stopVoice();
                 }}
                 className="px-3 py-2 text-gray-500 hover:text-gray-800 text-xs font-bold rounded-xl hover:bg-gray-100"
               >
@@ -447,22 +550,31 @@ export function AIAssistant() {
 
         {/* Voice Error Banner */}
         {voiceError && (
-          <div className="bg-amber-50 border border-amber-300 text-amber-900 text-xs p-3 rounded-xl flex items-center justify-between gap-2 shadow-sm font-medium">
-            <div className="flex items-center gap-2">
-              <AlertCircle size={16} className="text-amber-600 shrink-0" />
+          <div className="bg-amber-50 border border-amber-300 text-amber-900 text-xs p-3.5 rounded-xl flex items-center justify-between gap-2 shadow-sm font-medium">
+            <div className="flex items-center gap-2.5">
+              <AlertCircle size={18} className="text-amber-600 shrink-0" />
               <span>{voiceError}</span>
             </div>
-            <button onClick={() => setVoiceError(null)} className="text-amber-700 hover:text-amber-950 font-bold px-1.5 py-0.5 rounded">✕</button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={runMicDiagnostic}
+                className="underline font-bold text-blue-700 hover:text-blue-900"
+              >
+                Run Hardware Mic Test
+              </button>
+              <button onClick={() => setVoiceError(null)} className="text-amber-700 hover:text-amber-950 font-bold px-1.5 py-0.5 rounded">✕</button>
+            </div>
           </div>
         )}
 
-        {/* Input and Microphone Form */}
+        {/* Text Input and Microphone Form */}
         <form onSubmit={(e) => { e.preventDefault(); handleSend(input); }} className="flex gap-2 relative">
           <input
             type="text"
             value={input}
             onChange={e => setInput(e.target.value)}
-            placeholder={isListening ? "Listening to your voice... Speak now" : tr(language, 'ai_placeholder')}
+            placeholder={isListening ? "Listening... Speak into your microphone now" : tr(language, 'ai_placeholder')}
             className="flex-1 bg-slate-50 border border-slate-300 text-slate-900 rounded-xl px-4 py-3 pr-24 focus:ring-2 focus:ring-blue-600 focus:bg-white outline-none text-sm transition-all"
           />
           
@@ -474,7 +586,7 @@ export function AIAssistant() {
             className={`absolute right-14 top-1/2 -translate-y-1/2 p-2 rounded-xl transition-all ${
               isListening 
                 ? 'text-white bg-red-600 animate-pulse hover:bg-red-700 shadow-md shadow-red-500/30' 
-                : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50'
+                : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50'
             }`}
           >
             {isListening ? <StopCircle size={20} /> : <Mic size={20} />}
