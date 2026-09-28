@@ -2,14 +2,15 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   Search, Plus, Minus, Trash2, ShoppingCart, CheckCircle, 
   Mic, StopCircle, Sparkles, Volume2, Globe, AlertCircle, 
-  ArrowRight, Check, Printer, Bot, RefreshCw, Barcode 
+  ArrowRight, ArrowLeft, Check, Printer, Bot, RefreshCw, Barcode,
+  Receipt, ChevronRight, X
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { tr } from '../i18n';
 import { Product, CartItem } from '../types';
 import { parseVoiceBillingCommand } from '../services/voiceBillingService';
 import { BarcodeScannerModal } from '../components/BarcodeScannerModal';
-import { identifyProductByBarcode, playBarcodeBeep, FMCG_BARCODE_CATALOG } from '../services/barcodeService';
+import { identifyProductByBarcode, playBarcodeBeep } from '../services/barcodeService';
 
 export function Billing() {
   const { products, setProducts, transactions, setTransactions, language, addNotification, currentUser } = useApp();
@@ -17,6 +18,9 @@ export function Billing() {
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showReceipt, setShowReceipt] = useState<string | null>(null);
+
+  // Mobile navigation tab: 'products' | 'bill' (only active on mobile screens < lg)
+  const [mobileTab, setMobileTab] = useState<'products' | 'bill'>('products');
 
   // Barcode Scanner Modal State
   const [isBarcodeModalOpen, setIsBarcodeModalOpen] = useState(false);
@@ -60,8 +64,13 @@ export function Billing() {
   };
 
   const filteredProducts = useMemo(() => {
-    const q = search.toLowerCase();
-    return products.filter(p => p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q));
+    const q = search.toLowerCase().trim();
+    if (!q) return products;
+    return products.filter(p => 
+      p.name.toLowerCase().includes(q) || 
+      p.category.toLowerCase().includes(q) ||
+      (p.barcode && p.barcode.includes(q))
+    );
   }, [products, search]);
 
   const addToCart = (product: Product, quantityToAdd: number = 1) => {
@@ -91,7 +100,13 @@ export function Billing() {
     });
   };
 
-  const subtotal = cart.reduce((sum, item) => sum + (item.product.sellingPrice * item.quantity), 0);
+  const subtotal = useMemo(() => {
+    return cart.reduce((sum, item) => sum + (item.product.sellingPrice * item.quantity), 0);
+  }, [cart]);
+
+  const cartTotalQuantity = useMemo(() => {
+    return cart.reduce((sum, item) => sum + item.quantity, 0);
+  }, [cart]);
 
   // Complete Sale transaction logic
   const completeSaleWithItems = (targetCart: CartItem[] = cart) => {
@@ -318,44 +333,44 @@ export function Billing() {
   };
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4 sm:gap-6 pb-24 lg:pb-0">
       
       {/* 🚀 AI Voice Assistant & Barcode Scanner Billing Strip */}
-      <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-900 rounded-3xl p-5 sm:p-6 text-white shadow-xl shadow-blue-900/20 border border-blue-500/30">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-900 rounded-2xl sm:rounded-3xl p-4 sm:p-6 text-white shadow-xl shadow-blue-900/20 border border-blue-500/30">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
           
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <span className="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 font-black text-[10px] uppercase tracking-wider">
+              <span className="px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 font-black text-[10px] uppercase tracking-wider">
                 Instant Billing
               </span>
-              <span className="text-xs text-blue-200 font-semibold">
-                Speak or Scan to add products directly to the bill
+              <span className="text-[11px] sm:text-xs text-blue-200 font-semibold truncate">
+                Speak or Scan to add products directly
               </span>
             </div>
-            <h1 className="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2.5">
+            <h1 className="text-lg sm:text-2xl font-black tracking-tight flex items-center gap-2">
               <span>Smart Billing Agent</span>
-              <Bot size={24} className="text-blue-300" />
+              <Bot size={20} className="text-blue-300 sm:w-6 sm:h-6" />
             </h1>
-            <p className="text-xs text-blue-100 max-w-xl">
+            <p className="text-[11px] sm:text-xs text-blue-100 max-w-xl hidden xs:block">
               Tell the agent e.g. <span className="underline decoration-amber-400 font-bold">"2 biscuits and 3 milk packets"</span> or click <span className="font-bold text-amber-300">Scan Barcode</span> to instantly scan items with camera!
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5 self-start md:self-center">
+          <div className="flex flex-wrap items-center gap-2 self-stretch sm:self-auto">
             {/* Language Selector */}
-            <div className="flex items-center gap-1.5 bg-black/25 backdrop-blur-md px-3 py-2 rounded-xl border border-white/10 text-xs">
-              <Globe size={14} className="text-blue-200" />
+            <div className="flex items-center gap-1.5 bg-black/25 backdrop-blur-md px-2.5 py-2 rounded-xl border border-white/10 text-xs">
+              <Globe size={13} className="text-blue-200 shrink-0" />
               <select
                 value={voiceLang}
                 onChange={(e) => setVoiceLang(e.target.value)}
-                className="bg-transparent text-white font-bold outline-none cursor-pointer"
+                className="bg-transparent text-white font-bold outline-none cursor-pointer text-xs"
               >
-                <option value="en-US" className="text-slate-900">🇺🇸 English (US)</option>
-                <option value="en-IN" className="text-slate-900">🇮🇳 English (India)</option>
-                <option value="hi-IN" className="text-slate-900">🇮🇳 हिन्दी (Hindi)</option>
-                <option value="te-IN" className="text-slate-900">🇮🇳 తెలుగు (Telugu)</option>
-                <option value="kn-IN" className="text-slate-900">🇮🇳 ಕನ್ನಡ (Kannada)</option>
+                <option value="en-US" className="text-slate-900">🇺🇸 English</option>
+                <option value="en-IN" className="text-slate-900">🇮🇳 Indian English</option>
+                <option value="hi-IN" className="text-slate-900">🇮🇳 हिन्दी</option>
+                <option value="te-IN" className="text-slate-900">🇮🇳 తెలుగు</option>
+                <option value="kn-IN" className="text-slate-900">🇮🇳 ಕನ್ನಡ</option>
               </select>
             </div>
 
@@ -363,10 +378,10 @@ export function Billing() {
             <button
               type="button"
               onClick={() => setIsBarcodeModalOpen(true)}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-md active:scale-95 cursor-pointer shrink-0"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-md active:scale-95 cursor-pointer shrink-0"
               title="Scan Barcode with Camera or Barcode Gun to Add Item to Bill"
             >
-              <Barcode size={18} />
+              <Barcode size={16} />
               <span>Scan Barcode</span>
             </button>
 
@@ -374,7 +389,7 @@ export function Billing() {
             <button
               type="button"
               onClick={toggleVoiceBilling}
-              className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all shadow-md cursor-pointer shrink-0 ${
+              className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all shadow-md cursor-pointer shrink-0 ${
                 isListening
                   ? 'bg-red-500 text-white animate-pulse hover:bg-red-600 shadow-red-500/50'
                   : 'bg-white text-blue-700 hover:bg-blue-50 shadow-white/20'
@@ -382,12 +397,12 @@ export function Billing() {
             >
               {isListening ? (
                 <>
-                  <StopCircle size={18} className="animate-spin" />
+                  <StopCircle size={16} className="animate-spin" />
                   <span>Stop & Bill</span>
                 </>
               ) : (
                 <>
-                  <Mic size={18} />
+                  <Mic size={16} />
                   <span>Voice Billing</span>
                 </>
               )}
@@ -397,46 +412,44 @@ export function Billing() {
 
         {/* Live Listening Banner */}
         {isListening && (
-          <div className="mt-4 p-3.5 bg-red-600/90 backdrop-blur-md border border-red-300/40 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-fade-in shadow-inner">
-            <div className="flex items-center gap-3">
-              <span className="relative flex h-3.5 w-3.5 shrink-0">
+          <div className="mt-3 p-3 bg-red-600/90 backdrop-blur-md border border-red-300/40 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 animate-fade-in shadow-inner">
+            <div className="flex items-center gap-2.5">
+              <span className="relative flex h-3 w-3 shrink-0">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-80"></span>
-                <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-white"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
               </span>
               <div>
-                <span className="text-[11px] font-bold uppercase tracking-wider text-red-100 block">
-                  Listening to your shop order... Speak now!
+                <span className="text-[10px] font-bold uppercase tracking-wider text-red-100 block">
+                  Listening to order... Speak now!
                 </span>
-                <span className="text-sm font-black text-white">
+                <span className="text-xs sm:text-sm font-black text-white">
                   {voiceTranscript ? `"${voiceTranscript}"` : 'Say e.g. "2 biscuits and 3 milk packets"...'}
                 </span>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 self-end sm:self-center">
-              <button
-                type="button"
-                onClick={() => {
-                  const text = capturedTextRef.current.trim() || voiceTranscript.trim();
-                  if (recognitionRef.current) {
-                    try { recognitionRef.current.stop(); } catch {}
-                  }
-                  setIsListening(false);
-                  if (text) executeBillingCommand(text);
-                }}
-                className="px-3 py-1.5 bg-white text-red-700 font-bold text-xs rounded-lg shadow-sm hover:bg-red-50"
-              >
-                ✓ Add to Bill Now
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const text = capturedTextRef.current.trim() || voiceTranscript.trim();
+                if (recognitionRef.current) {
+                  try { recognitionRef.current.stop(); } catch {}
+                }
+                setIsListening(false);
+                if (text) executeBillingCommand(text);
+              }}
+              className="px-3 py-1.5 bg-white text-red-700 font-bold text-xs rounded-lg shadow-sm hover:bg-red-50 self-end sm:self-center"
+            >
+              ✓ Add to Bill Now
+            </button>
           </div>
         )}
 
         {/* Voice Feedback Success Banner */}
         {voiceFeedback && (
-          <div className="mt-3 p-3 bg-emerald-500/90 text-white rounded-xl text-xs font-semibold flex items-center justify-between gap-2 shadow-sm animate-fade-in">
+          <div className="mt-2.5 p-2.5 bg-emerald-500/90 text-white rounded-xl text-xs font-semibold flex items-center justify-between gap-2 shadow-sm animate-fade-in">
             <div className="flex items-center gap-2">
-              <CheckCircle size={16} className="text-white shrink-0" />
+              <CheckCircle size={15} className="text-white shrink-0" />
               <span>{voiceFeedback}</span>
             </div>
             <button
@@ -445,16 +458,16 @@ export function Billing() {
               title="Hear voice confirmation"
               className="p-1 hover:bg-white/20 rounded-md transition-colors"
             >
-              <Volume2 size={16} />
+              <Volume2 size={15} />
             </button>
           </div>
         )}
 
         {/* Voice Error Banner */}
         {voiceError && (
-          <div className="mt-3 p-3 bg-amber-500/90 text-white rounded-xl text-xs font-medium flex items-center justify-between gap-2 shadow-sm animate-fade-in">
+          <div className="mt-2.5 p-2.5 bg-amber-500/90 text-white rounded-xl text-xs font-medium flex items-center justify-between gap-2 shadow-sm animate-fade-in">
             <div className="flex items-center gap-2">
-              <AlertCircle size={16} className="text-white shrink-0" />
+              <AlertCircle size={15} className="text-white shrink-0" />
               <span>{voiceError}</span>
             </div>
             <button onClick={() => setVoiceError(null)} className="font-bold px-2 py-0.5 hover:opacity-75">✕</button>
@@ -462,40 +475,40 @@ export function Billing() {
         )}
 
         {/* Quick Voice & Barcode Test Chips + Manual Input */}
-        <div className="mt-4 pt-3.5 border-t border-white/15 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+        <div className="mt-3 pt-3 border-t border-white/15 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5">
           {/* Spoken & Barcode Chips */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[11px] font-bold text-blue-200 flex items-center gap-1 mr-1">
-              <Sparkles size={12} className="text-amber-300" /> Click to Test:
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
+            <span className="text-[10px] font-bold text-blue-200 shrink-0 flex items-center gap-1 mr-1">
+              <Sparkles size={11} className="text-amber-300" /> Test:
             </span>
             <button
               type="button"
               onClick={() => handleBarcodeScanned({ id: '1', name: 'Parle-G Biscuits', category: 'Biscuits', stock: 25, purchasePrice: 8, sellingPrice: 10, minimumStock: 20, barcode: '8901719101038' })}
-              className="px-2.5 py-1 bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-bold rounded-lg transition-all flex items-center gap-1 shadow-sm"
+              className="px-2.5 py-1 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded-lg transition-all flex items-center gap-1 shrink-0 shadow-sm text-xs"
             >
-              <Barcode size={13} />
-              <span>Scan Parle-G (₹10)</span>
+              <Barcode size={12} />
+              <span>Parle-G (₹10)</span>
             </button>
             <button
               type="button"
               onClick={() => handleBarcodeScanned({ id: '2', name: 'Amul Milk', category: 'Dairy', stock: 15, purchasePrice: 54, sellingPrice: 60, minimumStock: 10, barcode: '8901262010047' })}
-              className="px-2.5 py-1 bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-bold rounded-lg transition-all flex items-center gap-1 shadow-sm"
+              className="px-2.5 py-1 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded-lg transition-all flex items-center gap-1 shrink-0 shadow-sm text-xs"
             >
-              <Barcode size={13} />
-              <span>Scan Milk (₹60)</span>
+              <Barcode size={12} />
+              <span>Milk (₹60)</span>
             </button>
             <button
               type="button"
               onClick={() => executeBillingCommand("2 biscuits and 3 milk packets")}
-              className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white text-xs font-medium rounded-lg border border-white/20 transition-all text-left flex items-center gap-1.5"
+              className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg border border-white/20 transition-all text-left flex items-center gap-1 shrink-0 text-xs"
             >
               <span>🎤</span>
-              <span>2 biscuits 3 milk</span>
+              <span>2 biscuit 3 milk</span>
             </button>
             <button
               type="button"
               onClick={() => executeBillingCommand("Give bill")}
-              className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white text-xs font-medium rounded-lg border border-white/20 transition-all text-left flex items-center gap-1.5"
+              className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg border border-white/20 transition-all text-left flex items-center gap-1 shrink-0 text-xs"
             >
               <span>🧾</span>
               <span>Give bill</span>
@@ -508,13 +521,13 @@ export function Billing() {
               type="text"
               value={voiceInput}
               onChange={(e) => setVoiceInput(e.target.value)}
-              placeholder="Or type: 2 biscuits 3 milk..."
-              className="bg-black/25 text-white placeholder-blue-200 border border-white/20 rounded-xl px-3 py-1.5 text-xs outline-none focus:bg-black/40 focus:border-white transition-all w-48 sm:w-60"
+              placeholder="Type order: 2 biscuits 3 milk..."
+              className="bg-black/25 text-white placeholder-blue-200 border border-white/20 rounded-xl px-3 py-1.5 text-xs outline-none focus:bg-black/40 focus:border-white transition-all flex-1 md:w-56"
             />
             <button
               type="submit"
               disabled={!voiceInput.trim()}
-              className="px-3 py-1.5 bg-white text-blue-800 font-bold text-xs rounded-xl hover:bg-blue-50 disabled:opacity-40 transition-all flex items-center gap-1"
+              className="px-3 py-1.5 bg-white text-blue-800 font-bold text-xs rounded-xl hover:bg-blue-50 disabled:opacity-40 transition-all shrink-0"
             >
               Add
             </button>
@@ -522,16 +535,66 @@ export function Billing() {
         </div>
       </div>
 
-      {/* Main POS Interface (Products Grid + Live Cart) */}
+      {/* ========================================================= */}
+      {/* 📱 MOBILE VIEW TAB SWITCHER (VISIBLE ONLY ON MOBILE < LG) */}
+      {/* ========================================================= */}
+      <div className="lg:hidden flex bg-white p-1.5 rounded-2xl border border-gray-200 shadow-sm sticky top-0 z-30">
+        <button
+          type="button"
+          onClick={() => setMobileTab('products')}
+          className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 ${
+            mobileTab === 'products'
+              ? 'bg-blue-600 text-white shadow-md'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+          }`}
+        >
+          <Search size={15} />
+          <span>Products ({filteredProducts.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setMobileTab('bill')}
+          className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 relative ${
+            mobileTab === 'bill'
+              ? 'bg-blue-600 text-white shadow-md'
+              : cart.length > 0
+                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+          }`}
+        >
+          <ShoppingCart size={15} />
+          <span>Current Bill</span>
+          {cartTotalQuantity > 0 && (
+            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${
+              mobileTab === 'bill' ? 'bg-white text-blue-700' : 'bg-emerald-600 text-white'
+            }`}>
+              {cartTotalQuantity} • ₹{subtotal}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* ========================================================= */}
+      {/* MAIN POS INTERFACE (PRODUCTS GRID + LIVE BILL)            */}
+      {/* On Laptop (lg): Side-by-Side 2 columns                    */}
+      {/* On Mobile (<lg): Clean dedicated views based on MobileTab  */}
+      {/* ========================================================= */}
       <div className="flex flex-col lg:flex-row gap-6 flex-1 min-h-0">
-        {/* Products Panel */}
-        <div className="flex-1 flex flex-col bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden lg:h-[calc(100vh-17rem)]">
-          <div className="p-4 border-b border-gray-200 bg-slate-50 flex items-center justify-between gap-3">
+        
+        {/* ----------------------------------------------------- */}
+        {/* 1. PRODUCTS PANEL                                     */}
+        {/* ----------------------------------------------------- */}
+        <div className={`w-full flex-1 flex-col bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden lg:h-[calc(100vh-17rem)] ${
+          mobileTab === 'products' ? 'flex' : 'hidden lg:flex'
+        }`}>
+          {/* Search Bar */}
+          <div className="p-3 sm:p-4 border-b border-gray-200 bg-slate-50 flex items-center justify-between gap-2 sm:gap-3">
             <div className="relative flex-1">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={17} />
               <input
                 type="text"
-                placeholder="Search products or scan barcode (press Enter)..."
+                placeholder="Search products or scan barcode..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 onKeyDown={(e) => {
@@ -546,15 +609,15 @@ export function Billing() {
                     }
                   }
                 }}
-                className="w-full pl-10 pr-10 py-2.5 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-600 outline-none text-sm transition-all"
+                className="w-full pl-9 pr-9 py-2 sm:py-2.5 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-600 outline-none text-xs sm:text-sm transition-all"
               />
               <button
                 type="button"
                 onClick={() => setIsBarcodeModalOpen(true)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-blue-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-blue-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
                 title="Open Camera Barcode Scanner"
               >
-                <Barcode size={18} />
+                <Barcode size={17} />
               </button>
             </div>
             <span className="text-xs font-semibold text-gray-500 whitespace-nowrap">
@@ -562,128 +625,214 @@ export function Billing() {
             </span>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 bg-slate-50/50">
+          {/* Products Grid */}
+          <div className="flex-1 overflow-y-auto p-3 sm:p-4 bg-slate-50/50">
             {filteredProducts.length === 0 ? (
-              <div className="py-16 text-center text-gray-400 space-y-3">
-                <ShoppingCart size={40} className="mx-auto text-gray-300" />
+              <div className="py-12 sm:py-16 text-center text-gray-400 space-y-3">
+                <ShoppingCart size={36} className="mx-auto text-gray-300" />
                 <p className="font-bold text-gray-700 text-sm">No matching products found</p>
-                <p className="text-xs text-gray-400 max-w-sm mx-auto">
-                  You can speak items ("2 biscuits and 3 milk packets") or tap "Scan Barcode" to scan any item packaging directly.
+                <p className="text-xs text-gray-400 max-w-sm mx-auto px-4">
+                  Speak items or tap "Scan Barcode" to scan any packaging directly into the bill.
                 </p>
                 <button
                   type="button"
                   onClick={() => setIsBarcodeModalOpen(true)}
                   className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs rounded-xl shadow-sm transition-all inline-flex items-center gap-1.5 cursor-pointer"
                 >
-                  <Barcode size={16} /> Scan Barcode to Add
+                  <Barcode size={15} /> Scan Barcode to Add
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3.5">
-                {filteredProducts.map(p => (
-                  <button
-                    key={p.id}
-                    onClick={() => addToCart(p, 1)}
-                    disabled={p.stock === 0}
-                    className={`relative p-3.5 border rounded-2xl text-left transition-all flex flex-col justify-between ${
-                      p.stock === 0 
-                        ? 'bg-gray-100 border-gray-200 opacity-60 cursor-not-allowed' 
-                        : 'bg-white border-gray-200 hover:border-blue-500 hover:shadow-md active:scale-[0.98]'
-                    }`}
-                  >
-                    {p.stock === 0 && (
-                      <div className="absolute top-2.5 right-2.5 text-[10px] font-bold px-2 py-0.5 bg-red-100 text-red-700 rounded-full uppercase">
-                        Out
-                      </div>
-                    )}
-                    <div>
-                      <div className="flex items-center justify-between gap-1 mb-1.5">
-                        <span className="text-[11px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md uppercase tracking-wider">
+              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-3.5">
+                {filteredProducts.map(p => {
+                  const cartItem = cart.find(ci => ci.product.id === p.id);
+                  const isOutOfStock = p.stock === 0;
+
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => addToCart(p, 1)}
+                      disabled={isOutOfStock}
+                      className={`relative p-3 sm:p-3.5 border rounded-2xl text-left transition-all flex flex-col justify-between select-none ${
+                        isOutOfStock 
+                          ? 'bg-gray-100 border-gray-200 opacity-60 cursor-not-allowed' 
+                          : cartItem
+                            ? 'bg-blue-50/70 border-blue-400 shadow-xs active:scale-[0.98]'
+                            : 'bg-white border-gray-200 hover:border-blue-500 hover:shadow-md active:scale-[0.98]'
+                      }`}
+                    >
+                      {/* Top Badges */}
+                      <div className="flex items-center justify-between gap-1 mb-1.5 w-full">
+                        <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded uppercase tracking-wider truncate max-w-[90px]">
                           {p.category}
                         </span>
-                        {p.barcode && (
-                          <span className="font-mono text-[9px] text-gray-400 bg-slate-100 px-1 py-0.5 rounded flex items-center gap-0.5">
-                            <Barcode size={10} />
+
+                        {isOutOfStock ? (
+                          <span className="text-[9px] font-black px-1.5 py-0.5 bg-red-100 text-red-700 rounded-full uppercase">
+                            Out
                           </span>
-                        )}
+                        ) : cartItem ? (
+                          <span className="text-[10px] font-black px-2 py-0.5 bg-blue-600 text-white rounded-full flex items-center gap-1 shadow-xs animate-scale-in">
+                            <span>{cartItem.quantity}</span>
+                            <span className="text-[8px] opacity-80 uppercase">in bill</span>
+                          </span>
+                        ) : p.barcode ? (
+                          <span className="font-mono text-[9px] text-gray-400 bg-slate-100 px-1 py-0.5 rounded flex items-center gap-0.5">
+                            <Barcode size={9} />
+                          </span>
+                        ) : null}
                       </div>
-                      <div className="font-bold text-sm text-gray-900 mb-2 line-clamp-1">{p.name}</div>
-                    </div>
-                    <div className="flex justify-between items-baseline pt-2 border-t border-gray-100 mt-2">
-                      <span className="font-black text-base text-gray-900">₹{p.sellingPrice}</span>
-                      <span className={`text-[11px] font-semibold ${p.stock <= p.minimumStock ? 'text-amber-600' : 'text-gray-500'}`}>
-                        Stock: {p.stock}
-                      </span>
-                    </div>
-                  </button>
-                ))}
+
+                      {/* Product Name */}
+                      <div className="font-bold text-xs sm:text-sm text-gray-900 mb-2 line-clamp-2 leading-tight">
+                        {p.name}
+                      </div>
+
+                      {/* Price & Stock */}
+                      <div className="flex justify-between items-baseline pt-2 border-t border-gray-100 mt-auto w-full">
+                        <span className="font-black text-sm sm:text-base text-gray-900">₹{p.sellingPrice}</span>
+                        <span className={`text-[10px] sm:text-[11px] font-semibold ${p.stock <= p.minimumStock ? 'text-amber-600' : 'text-gray-500'}`}>
+                          Stock: {p.stock}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
         </div>
 
-        {/* Live Cart / Bill Panel */}
-        <div className="w-full lg:w-96 flex flex-col bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden lg:h-[calc(100vh-17rem)]">
-          <div className="p-4 border-b border-gray-200 bg-slate-50 flex justify-between items-center">
-            <h2 className="font-bold text-base text-gray-900 flex items-center gap-2">
-              <ShoppingCart size={18} className="text-blue-600" />
-              <span>Current Bill</span>
-            </h2>
+        {/* ----------------------------------------------------- */}
+        {/* 2. LIVE CART / CURRENT BILL PANEL                     */}
+        {/* On Mobile: Full width when mobileTab === 'bill'       */}
+        {/* On Laptop: Side column w-96 always visible             */}
+        {/* ----------------------------------------------------- */}
+        <div className={`w-full lg:w-96 flex-col bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden lg:h-[calc(100vh-17rem)] ${
+          mobileTab === 'bill' ? 'flex' : 'hidden lg:flex'
+        }`}>
+          {/* Header */}
+          <div className="p-3.5 sm:p-4 border-b border-gray-200 bg-slate-50 flex justify-between items-center">
+            <div className="flex items-center gap-2">
+              {/* Back button on mobile */}
+              <button
+                type="button"
+                onClick={() => setMobileTab('products')}
+                className="lg:hidden p-1.5 -ml-1 text-gray-600 hover:text-gray-900 hover:bg-slate-200 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold"
+                title="Back to products list"
+              >
+                <ArrowLeft size={16} />
+              </button>
+
+              <h2 className="font-black text-sm sm:text-base text-gray-900 flex items-center gap-2">
+                <ShoppingCart size={18} className="text-blue-600" />
+                <span>Current Bill</span>
+              </h2>
+            </div>
+
             <div className="flex items-center gap-2">
               {cart.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => setCart([])}
-                  className="text-xs text-red-600 hover:underline font-medium"
+                  onClick={() => {
+                    if (window.confirm("Are you sure you want to clear all items from this bill?")) {
+                      setCart([]);
+                    }
+                  }}
+                  className="text-xs text-red-600 hover:text-red-700 font-bold px-2 py-1 rounded hover:bg-red-50 transition-colors"
                 >
-                  Clear
+                  Clear Bill
                 </button>
               )}
-              <span className="text-xs bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded-full">
-                {cart.reduce((s, i) => s + i.quantity, 0)} items
+              <span className="text-xs bg-blue-100 text-blue-800 font-black px-2.5 py-0.5 rounded-full">
+                {cartTotalQuantity} items
               </span>
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {/* Cart Items List */}
+          <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2.5">
             {cart.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-2 py-12">
-                <ShoppingCart size={40} className="text-gray-300" />
-                <p className="text-sm font-semibold text-gray-600">Bill is empty</p>
-                <p className="text-xs text-gray-400 text-center max-w-[200px]">
-                  Scan a barcode, speak your order, or click products to build the bill.
-                </p>
+              <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-3 py-10 sm:py-12 text-center">
+                <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-500 flex items-center justify-center shadow-xs">
+                  <ShoppingCart size={28} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-gray-700">Your bill is empty</p>
+                  <p className="text-xs text-gray-400 max-w-[220px] mx-auto mt-0.5">
+                    Scan a product barcode, speak your order, or tap items from the catalog.
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-2 pt-2 w-full max-w-xs">
+                  <button
+                    type="button"
+                    onClick={() => setMobileTab('products')}
+                    className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl transition-all shadow-sm flex items-center justify-center gap-1.5"
+                  >
+                    <Search size={14} />
+                    <span>Browse & Add Products</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsBarcodeModalOpen(true)}
+                    className="w-full py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-sm flex items-center justify-center gap-1.5"
+                  >
+                    <Barcode size={15} />
+                    <span>Scan Product Barcode</span>
+                  </button>
+                </div>
               </div>
             ) : (
               cart.map(item => (
-                <div key={item.product.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-gray-100">
-                  <div className="min-w-0 flex-1 pr-2">
-                    <div className="font-bold text-sm text-gray-900 truncate">{item.product.name}</div>
-                    <div className="text-xs text-gray-500 font-medium">₹{item.product.sellingPrice} each</div>
+                <div 
+                  key={item.product.id} 
+                  className="flex items-center justify-between p-3 bg-slate-50/80 hover:bg-slate-50 rounded-xl border border-gray-200/80 transition-all gap-2"
+                >
+                  {/* Name and Price per unit */}
+                  <div className="min-w-0 flex-1">
+                    <div className="font-bold text-xs sm:text-sm text-gray-900 truncate">
+                      {item.product.name}
+                    </div>
+                    <div className="text-[11px] text-gray-500 font-medium">
+                      ₹{item.product.sellingPrice} each • <span className="text-slate-400">{item.product.category}</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <div className="flex items-center border border-gray-300 rounded-lg bg-white">
+
+                  {/* Quantity Stepper & Amount */}
+                  <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                    <div className="flex items-center border border-gray-300 rounded-lg bg-white shadow-2xs">
                       <button 
+                        type="button"
                         onClick={() => updateQuantity(item.product.id, -1)}
-                        className="p-1 text-gray-500 hover:text-gray-800 transition-colors"
+                        className="p-1.5 sm:p-2 text-gray-600 hover:text-gray-900 active:bg-slate-100 transition-colors"
+                        title="Decrease quantity"
                       >
-                        <Minus size={14} />
+                        <Minus size={13} />
                       </button>
-                      <span className="w-7 text-center font-bold text-xs">{item.quantity}</span>
+                      <span className="w-7 text-center font-black text-xs text-gray-900 select-none">
+                        {item.quantity}
+                      </span>
                       <button 
+                        type="button"
                         onClick={() => updateQuantity(item.product.id, 1)}
                         disabled={item.quantity >= item.product.stock}
-                        className="p-1 text-gray-500 hover:text-gray-800 disabled:opacity-30 transition-colors"
+                        className="p-1.5 sm:p-2 text-gray-600 hover:text-gray-900 active:bg-slate-100 disabled:opacity-30 transition-colors"
+                        title="Increase quantity"
                       >
-                        <Plus size={14} />
+                        <Plus size={13} />
                       </button>
                     </div>
-                    <div className="w-16 text-right font-black text-sm text-gray-900">
+
+                    <div className="w-14 sm:w-16 text-right font-black text-xs sm:text-sm text-gray-900">
                       ₹{item.product.sellingPrice * item.quantity}
                     </div>
+
                     <button 
+                      type="button"
                       onClick={() => updateQuantity(item.product.id, -item.quantity)}
-                      className="text-gray-400 hover:text-red-500 p-1 transition-colors"
+                      className="text-gray-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors"
+                      title="Remove item"
                     >
                       <Trash2 size={15} />
                     </button>
@@ -693,29 +842,83 @@ export function Billing() {
             )}
           </div>
 
-          <div className="p-4 border-t border-gray-200 bg-slate-50 space-y-3">
-            <div className="space-y-1 text-sm">
-              <div className="flex justify-between text-gray-500 text-xs">
-                <span>{tr(language, 'bill_subtotal')}</span>
-                <span>₹{subtotal}</span>
+          {/* Cart Footer / Bill Summary */}
+          {cart.length > 0 && (
+            <div className="p-4 border-t border-gray-200 bg-slate-50 space-y-3">
+              <div className="space-y-1.5 text-xs sm:text-sm">
+                <div className="flex justify-between text-gray-500">
+                  <span>{tr(language, 'bill_subtotal')} ({cartTotalQuantity} items)</span>
+                  <span className="font-semibold text-gray-700">₹{subtotal}</span>
+                </div>
+                <div className="flex justify-between text-sm sm:text-base font-black text-gray-900 pt-1.5 border-t border-gray-200">
+                  <span>{tr(language, 'bill_total')} Payable</span>
+                  <span className="text-lg sm:text-xl text-blue-600 font-black">₹{subtotal}</span>
+                </div>
               </div>
-              <div className="flex justify-between text-base font-black text-gray-900 pt-1 border-t border-gray-200">
-                <span>{tr(language, 'bill_total')}</span>
-                <span className="text-xl text-blue-600">₹{subtotal}</span>
+
+              {/* Complete Sale Button */}
+              <button
+                type="button"
+                onClick={() => completeSaleWithItems(cart)}
+                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-black text-sm rounded-xl shadow-lg shadow-emerald-600/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Check size={18} />
+                <span>Complete Sale & Print Bill (₹{subtotal})</span>
+              </button>
+
+              {/* Mobile button to add more items */}
+              <button
+                type="button"
+                onClick={() => setMobileTab('products')}
+                className="lg:hidden w-full py-2 bg-white hover:bg-gray-100 text-gray-700 border border-gray-300 font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5"
+              >
+                <Plus size={14} />
+                <span>+ Add More Items to Bill</span>
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ========================================================= */}
+      {/* 🛒 MOBILE STICKY FLOATING BILL BAR                        */}
+      {/* Visible only on mobile (<lg) when on 'products' tab and    */}
+      {/* there are items in the cart so shopkeeper never loses bill */}
+      {/* ========================================================= */}
+      {mobileTab === 'products' && cart.length > 0 && (
+        <div className="lg:hidden fixed bottom-3 left-3 right-3 z-40 animate-slide-up">
+          <div className="bg-slate-900/95 backdrop-blur-md text-white rounded-2xl p-3 shadow-2xl border border-slate-700 flex items-center justify-between gap-3">
+            <div 
+              onClick={() => setMobileTab('bill')}
+              className="flex items-center gap-2.5 cursor-pointer flex-1"
+            >
+              <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-md">
+                <ShoppingCart size={20} />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm font-black text-white">₹{subtotal}</span>
+                  <span className="text-[10px] font-bold bg-blue-500/30 text-blue-300 px-1.5 py-0.5 rounded-full">
+                    {cartTotalQuantity} items
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-300 truncate">
+                  Tap to view current bill items
+                </div>
               </div>
             </div>
 
             <button
-              onClick={() => completeSaleWithItems(cart)}
-              disabled={cart.length === 0}
-              className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2"
+              type="button"
+              onClick={() => setMobileTab('bill')}
+              className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center gap-1 shrink-0"
             >
-              <Check size={18} />
-              <span>{tr(language, 'bill_complete')} (₹{subtotal})</span>
+              <span>View Bill</span>
+              <ChevronRight size={16} />
             </button>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Barcode Scanner Modal */}
       <BarcodeScannerModal
@@ -727,10 +930,10 @@ export function Billing() {
 
       {/* Sale Receipt Modal */}
       {showReceipt && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-gray-200 flex flex-col max-h-[90vh]">
-            <div className="p-6 bg-slate-900 text-white text-center relative">
-              <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-2 font-black text-xl shadow-md">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 sm:p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden border border-gray-200 flex flex-col max-h-[92vh]">
+            <div className="p-5 sm:p-6 bg-slate-900 text-white text-center relative">
+              <div className="w-12 h-12 bg-emerald-600 rounded-full flex items-center justify-center mx-auto mb-2 font-black text-xl shadow-md">
                 ✓
               </div>
               <h3 className="font-extrabold text-lg">{currentUser?.shopName || 'ShopStock Store'}</h3>
@@ -738,7 +941,7 @@ export function Billing() {
               <p className="text-[11px] text-gray-400 mt-1">Invoice #{showReceipt}</p>
             </div>
 
-            <div className="p-6 flex-1 overflow-y-auto space-y-4">
+            <div className="p-4 sm:p-6 flex-1 overflow-y-auto space-y-4">
               <div className="border-b border-dashed border-gray-300 pb-3 text-xs space-y-1">
                 <div className="flex justify-between text-gray-500">
                   <span>Date:</span>
@@ -757,7 +960,7 @@ export function Billing() {
                   <span>Total</span>
                 </div>
                 {cart.map((item, idx) => (
-                  <div key={idx} className="flex justify-between items-center text-gray-800">
+                  <div key={idx} className="flex justify-between items-center text-gray-800 py-0.5">
                     <span className="font-medium truncate max-w-[120px]">{item.product.name}</span>
                     <span className="text-gray-500">{item.quantity} × ₹{item.product.sellingPrice}</span>
                     <span className="font-bold">₹{item.product.sellingPrice * item.quantity}</span>
@@ -785,7 +988,7 @@ export function Billing() {
               </button>
               <button
                 type="button"
-                onClick={() => { setShowReceipt(null); setCart([]); }}
+                onClick={() => { setShowReceipt(null); setCart([]); setMobileTab('products'); }}
                 className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs shadow-md shadow-blue-500/20 transition-all"
               >
                 New Sale
