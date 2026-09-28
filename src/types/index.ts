@@ -29,6 +29,7 @@ export interface Product {
   purchasePrice: number;
   sellingPrice: number;
   minimumStock: number;
+  barcode?: string;
 }
 
 export interface CartItem {

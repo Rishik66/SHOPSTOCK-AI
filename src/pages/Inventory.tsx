@@ -2,12 +2,14 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   Search, Plus, Edit2, Trash2, PlusCircle, MinusCircle, X, 
   Mic, StopCircle, Bot, Sparkles, Volume2, Globe, AlertCircle, 
-  CheckCircle, ArrowRight, PackagePlus, Box 
+  CheckCircle, ArrowRight, PackagePlus, Box, Barcode 
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { tr } from '../i18n';
 import { Product } from '../types';
 import { parseVoiceInventoryCommand, VoiceStockChange } from '../services/voiceInventoryService';
+import { BarcodeScannerModal } from '../components/BarcodeScannerModal';
+import { generateEAN13Barcode } from '../services/barcodeService';
 
 export function Inventory() {
   const { products, setProducts, language, addNotification } = useApp();
@@ -19,6 +21,9 @@ export function Inventory() {
   
   const [adjustStock, setAdjustStock] = useState<{ id: string, type: 'add' | 'remove', name: string, stock: number } | null>(null);
   const [adjustQty, setAdjustQty] = useState<number>(0);
+
+  // Barcode Scanner Modal State
+  const [isBarcodeModalOpen, setIsBarcodeModalOpen] = useState(false);
 
   // Voice Inventory Assistant State
   const [isListening, setIsListening] = useState(false);
@@ -61,21 +66,40 @@ export function Inventory() {
 
   const filteredProducts = useMemo(() => {
     const q = search.toLowerCase();
-    return products.filter(p => p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q));
+    return products.filter(p => 
+      p.name.toLowerCase().includes(q) || 
+      p.category.toLowerCase().includes(q) ||
+      (p.barcode && p.barcode.toLowerCase().includes(q))
+    );
   }, [products, search]);
 
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const { name, category, stock, purchasePrice, sellingPrice, minimumStock } = formData;
-    if (!name || !category || stock === undefined || purchasePrice === undefined || sellingPrice === undefined || minimumStock === undefined) return;
-    
+    const { name, category, stock, purchasePrice, sellingPrice, minimumStock, barcode } = formData;
+    if (!name || !category || stock === undefined || !purchasePrice || !sellingPrice || !minimumStock) return;
+
+    if (sellingPrice < purchasePrice) {
+      alert("Selling price cannot be less than purchase price!");
+      return;
+    }
+
     if (editingId) {
-      setProducts(products.map(p => p.id === editingId ? { ...p, ...formData as Product } : p));
+      setProducts(products.map(p => p.id === editingId ? { 
+        ...p, 
+        ...formData, 
+        barcode: barcode?.trim() || undefined 
+      } as Product : p));
       addNotification({ type: 'success', message: tr(language, 'notif_updated', { name }) });
     } else {
       const newProduct: Product = {
-        id: Date.now().toString(),
-        name, category, stock, purchasePrice, sellingPrice, minimumStock
+        id: Date.now().toString() + Math.random().toString(36).slice(2),
+        name,
+        category,
+        stock,
+        purchasePrice,
+        sellingPrice,
+        minimumStock,
+        barcode: barcode?.trim() || undefined
       };
       setProducts([...products, newProduct]);
       addNotification({ type: 'success', message: tr(language, 'notif_added', { name }) });
@@ -110,6 +134,41 @@ export function Inventory() {
     addNotification({ type: 'success', message: tr(language, type === 'add' ? 'notif_stockAdded' : 'notif_stockRemoved', { qty: adjustQty, name }) });
     setAdjustStock(null);
     setAdjustQty(0);
+  };
+
+  // Barcode scanned in inventory handler
+  const handleBarcodeScannedForInventory = (scannedProduct: Product, quantityToAdd: number) => {
+    let nextProducts = [...products];
+    const existingIdx = nextProducts.findIndex(p => 
+      (p.barcode && p.barcode.trim() === scannedProduct.barcode?.trim()) ||
+      p.id === scannedProduct.id || 
+      p.name.toLowerCase() === scannedProduct.name.toLowerCase()
+    );
+
+    let updatedProduct: Product;
+    if (existingIdx >= 0) {
+      const prev = nextProducts[existingIdx];
+      const newStock = prev.stock + quantityToAdd;
+      updatedProduct = {
+        ...prev,
+        stock: newStock,
+        barcode: scannedProduct.barcode || prev.barcode
+      };
+      nextProducts[existingIdx] = updatedProduct;
+    } else {
+      // Auto-create product with the scanned quantity
+      updatedProduct = {
+        ...scannedProduct,
+        stock: quantityToAdd
+      };
+      nextProducts.push(updatedProduct);
+    }
+
+    setProducts(nextProducts);
+    const msg = `Scanned ${updatedProduct.name}: Added +${quantityToAdd} units (Total Stock: ${updatedProduct.stock})`;
+    setVoiceFeedback(msg);
+    addNotification({ type: 'success', message: msg });
+    speak(msg);
   };
 
   // Process voice restock command (e.g. "Add 60 biscuit packets and 6 milk packets to the inventory")
@@ -215,16 +274,15 @@ export function Inventory() {
       setIsListening(false);
       const text = capturedTextRef.current.trim();
       if (text) {
-        capturedTextRef.current = '';
         executeVoiceRestock(text);
       }
     };
 
     try {
       recognition.start();
-    } catch (err) {
+    } catch (e: any) {
+      setVoiceError('Could not start microphone. Please refresh or check browser permissions.');
       setIsListening(false);
-      setVoiceError('Could not start microphone. Click again to retry.');
     }
   };
 
@@ -236,33 +294,33 @@ export function Inventory() {
   };
 
   return (
-    <div className="space-y-4 h-full flex flex-col">
-      {/* 🎙️ Voice Inventory Restock Command Center */}
-      <div className="bg-gradient-to-r from-emerald-700 via-teal-700 to-emerald-800 rounded-2xl p-4 sm:p-5 text-white shadow-lg border border-emerald-500/30">
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 shadow-inner">
-              <PackagePlus size={28} className="text-white" />
+    <div className="flex flex-col gap-6">
+
+      {/* 🚀 AI Voice Assistant & Barcode Restock Strip */}
+      <div className="bg-gradient-to-r from-emerald-700 via-teal-700 to-emerald-900 rounded-3xl p-5 sm:p-6 text-white shadow-xl shadow-emerald-900/20 border border-emerald-500/30">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 font-black text-[10px] uppercase tracking-wider">
+                Instant Stock In
+              </span>
+              <span className="text-xs text-emerald-200 font-semibold">
+                Scan barcode or speak to add stock automatically
+              </span>
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-black tracking-tight text-white flex items-center gap-2">
-                  Voice Inventory Restock
-                  <span className="text-[10px] font-bold bg-white text-emerald-900 px-2.5 py-0.5 rounded-full uppercase tracking-wider">
-                    AI Auto-Stock
-                  </span>
-                </h2>
-              </div>
-              <p className="text-xs text-emerald-100 font-medium mt-0.5">
-                Speak stock additions: e.g. <span className="underline font-semibold">"Add 60 biscuit packets and 6 milk packets to the inventory"</span>
-              </p>
-            </div>
+            <h1 className="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2.5">
+              <span>Smart Stock Manager</span>
+              <Bot size={24} className="text-emerald-300" />
+            </h1>
+            <p className="text-xs text-emerald-100 max-w-xl">
+              Tap <span className="font-bold text-amber-300">Scan Barcode</span> to scan product packaging, or tell the agent e.g. <span className="underline decoration-amber-400 font-bold">"Add 60 biscuit packets and 6 milk packets"</span>!
+            </p>
           </div>
 
-          {/* Voice Controls: Mic Button & Locale */}
-          <div className="flex items-center gap-2.5 w-full md:w-auto">
+          <div className="flex flex-wrap items-center gap-2.5 self-start md:self-center">
             {/* Language Selector */}
-            <div className="flex items-center gap-1.5 bg-black/20 backdrop-blur-md px-3 py-2 rounded-xl border border-white/10 text-xs">
+            <div className="flex items-center gap-1.5 bg-black/25 backdrop-blur-md px-3 py-2 rounded-xl border border-white/10 text-xs">
               <Globe size={14} className="text-emerald-200" />
               <select
                 value={voiceLang}
@@ -277,11 +335,22 @@ export function Inventory() {
               </select>
             </div>
 
+            {/* 📷 Scan Barcode Button */}
+            <button
+              type="button"
+              onClick={() => setIsBarcodeModalOpen(true)}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-md active:scale-95 cursor-pointer shrink-0"
+              title="Scan Barcode to Add or Update Stock"
+            >
+              <Barcode size={18} />
+              <span>Scan Barcode</span>
+            </button>
+
             {/* Big Mic Button */}
             <button
               type="button"
               onClick={toggleVoiceRestock}
-              className={`flex-1 md:flex-initial flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all shadow-md ${
+              className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all shadow-md cursor-pointer shrink-0 ${
                 isListening
                   ? 'bg-red-500 text-white animate-pulse hover:bg-red-600 shadow-red-500/50'
                   : 'bg-white text-emerald-800 hover:bg-emerald-50 shadow-white/20'
@@ -396,22 +465,30 @@ export function Inventory() {
             <span className="text-[11px] font-bold text-emerald-200 flex items-center gap-1 mr-1">
               <Sparkles size={12} className="text-amber-300" /> Click to Test:
             </span>
-            {[
-              "Add 60 biscuit packets and 6 milk packets to the inventory",
-              "Add 20 Maggi and 10 Tata Salt",
-              "Add 15 Coca-Cola and 10 Bread",
-              "Add 25 Aashirvaad Atta"
-            ].map((phrase, i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={() => executeVoiceRestock(phrase)}
-                className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white text-xs font-medium rounded-lg border border-white/20 transition-all text-left flex items-center gap-1.5"
-              >
-                <span>📦</span>
-                <span>{phrase.length > 32 ? phrase.slice(0, 30) + '...' : phrase}</span>
-              </button>
-            ))}
+            <button
+              type="button"
+              onClick={() => handleBarcodeScannedForInventory({ id: '1', name: 'Parle-G Biscuits', category: 'Biscuits', stock: 0, purchasePrice: 8, sellingPrice: 10, minimumStock: 20, barcode: '8901719101038' }, 25)}
+              className="px-2.5 py-1 bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-bold rounded-lg transition-all flex items-center gap-1 shadow-sm"
+            >
+              <Barcode size={13} />
+              <span>Scan Parle-G (+25)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleBarcodeScannedForInventory({ id: '2', name: 'Amul Milk', category: 'Dairy', stock: 0, purchasePrice: 54, sellingPrice: 60, minimumStock: 10, barcode: '8901262010047' }, 10)}
+              className="px-2.5 py-1 bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-bold rounded-lg transition-all flex items-center gap-1 shadow-sm"
+            >
+              <Barcode size={13} />
+              <span>Scan Milk (+10)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => executeVoiceRestock("Add 60 biscuit packets and 6 milk packets to the inventory")}
+              className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white text-xs font-medium rounded-lg border border-white/20 transition-all text-left flex items-center gap-1.5"
+            >
+              <span>📦</span>
+              <span>Add 60 biscuits 6 milk</span>
+            </button>
           </div>
 
           {/* Quick Manual Voice Command Input */}
@@ -434,24 +511,37 @@ export function Inventory() {
         </div>
       </div>
 
-      {/* Search & Add Product Actions Bar */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-        <div className="relative flex-1 max-w-md w-full">
+      {/* Search & Actions Bar */}
+      <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+        <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input
             type="text"
             placeholder={tr(language, 'inv_search')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-600 outline-none text-sm transition-all"
+            className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-600 outline-none text-sm transition-all"
           />
         </div>
-        <button
-          onClick={() => { setFormData({}); setEditingId(null); setShowForm(true); }}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-bold text-sm shadow-md shadow-blue-500/20 transition-all"
-        >
-          <Plus size={18} /> {tr(language, 'inv_add')}
-        </button>
+
+        <div className="flex items-center gap-2">
+          {/* Scan Barcode button */}
+          <button
+            type="button"
+            onClick={() => setIsBarcodeModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 rounded-xl font-bold text-xs uppercase tracking-wider shadow-md active:scale-95 transition-all cursor-pointer"
+          >
+            <Barcode size={16} /> Scan Barcode
+          </button>
+
+          {/* Add Product button */}
+          <button
+            onClick={() => { setFormData({}); setEditingId(null); setShowForm(true); }}
+            className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-bold text-xs uppercase tracking-wider shadow-md shadow-blue-500/20 active:scale-95 transition-all"
+          >
+            <Plus size={16} /> {tr(language, 'inv_add')}
+          </button>
+        </div>
       </div>
 
       {/* Inventory Table */}
@@ -472,31 +562,38 @@ export function Inventory() {
             <tbody className="divide-y divide-gray-100">
               {filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-gray-500">{tr(language, 'inv_empty')}</td>
+                  <td colSpan={7} className="p-12 text-center text-gray-500 space-y-2">
+                    <Box size={36} className="mx-auto text-gray-300 mb-2" />
+                    <p className="font-bold text-gray-700 text-sm">Your inventory is empty</p>
+                    <p className="text-xs text-gray-400">
+                      Tap "Scan Barcode" or speak "Add 60 biscuit packets and 6 milk packets" to stock your store instantly.
+                    </p>
+                  </td>
                 </tr>
               ) : (
                 filteredProducts.map(p => (
                   <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="p-4 font-bold text-gray-900">{p.name}</td>
-                    <td className="p-4 text-gray-600 font-medium">
-                      <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-xs">
-                        {p.category}
-                      </span>
-                    </td>
                     <td className="p-4">
-                      <span className="font-black text-gray-900 text-base">{p.stock}</span>
-                      <span className="text-xs text-gray-400 ml-1.5 font-medium">/ min {p.minimumStock}</span>
+                      <div className="font-bold text-gray-900">{p.name}</div>
+                      {p.barcode && (
+                        <div className="font-mono text-[10px] text-gray-500 bg-slate-100 px-1.5 py-0.5 rounded w-fit flex items-center gap-1 mt-0.5">
+                          <Barcode size={11} className="text-gray-400" />
+                          <span>{p.barcode}</span>
+                        </div>
+                      )}
                     </td>
-                    <td className="p-4 font-medium text-gray-600">₹{p.purchasePrice}</td>
-                    <td className="p-4 font-bold text-gray-900">₹{p.sellingPrice}</td>
+                    <td className="p-4 text-gray-500">{p.category}</td>
+                    <td className="p-4 font-bold text-gray-800">{p.stock}</td>
+                    <td className="p-4 text-gray-600">₹{p.purchasePrice}</td>
+                    <td className="p-4 font-bold text-blue-600">₹{p.sellingPrice}</td>
                     <td className="p-4">
                       {p.stock <= p.minimumStock ? (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-800">
-                          🔴 {tr(language, 'inv_lowstock')}
+                        <span className="px-2.5 py-1 text-xs font-bold bg-red-100 text-red-700 rounded-full border border-red-200">
+                          {tr(language, 'inv_lowstock')}
                         </span>
                       ) : (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-800">
-                          🟢 {tr(language, 'inv_instock')}
+                        <span className="px-2.5 py-1 text-xs font-bold bg-emerald-100 text-emerald-800 rounded-full">
+                          {tr(language, 'inv_instock')}
                         </span>
                       )}
                     </td>
@@ -517,6 +614,14 @@ export function Inventory() {
         </div>
       </div>
 
+      {/* Barcode Scanner Modal */}
+      <BarcodeScannerModal
+        isOpen={isBarcodeModalOpen}
+        onClose={() => setIsBarcodeModalOpen(false)}
+        mode="inventory"
+        onScannedForInventory={handleBarcodeScannedForInventory}
+      />
+
       {/* Add / Edit Product Modal */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
@@ -530,10 +635,43 @@ export function Inventory() {
                 <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">{tr(language, 'inv_name')}*</label>
                 <input required type="text" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full border-gray-300 rounded-xl p-2.5 border focus:ring-2 focus:ring-blue-600 text-sm outline-none" />
               </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
+                    Barcode (EAN-13 / Custom)
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, barcode: generateEAN13Barcode() })}
+                      className="text-[11px] font-bold text-blue-600 hover:text-blue-800 bg-blue-50 px-2 py-0.5 rounded-lg"
+                    >
+                      🎲 Generate
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsBarcodeModalOpen(true)}
+                      className="text-[11px] font-bold text-amber-800 hover:text-amber-900 bg-amber-100 px-2 py-0.5 rounded-lg flex items-center gap-1"
+                    >
+                      <Barcode size={12} /> Scan
+                    </button>
+                  </div>
+                </div>
+                <input
+                  type="text"
+                  placeholder="e.g. 8901719101038"
+                  value={formData.barcode || ''}
+                  onChange={e => setFormData({ ...formData, barcode: e.target.value })}
+                  className="w-full border-gray-300 rounded-xl p-2.5 border font-mono text-sm outline-none focus:ring-2 focus:ring-blue-600"
+                />
+              </div>
+
               <div>
                 <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">{tr(language, 'inv_category')}*</label>
                 <input required type="text" value={formData.category || ''} onChange={e => setFormData({ ...formData, category: e.target.value })} className="w-full border-gray-300 rounded-xl p-2.5 border focus:ring-2 focus:ring-blue-600 text-sm outline-none" />
               </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">{tr(language, 'inv_stock')}*</label>
@@ -544,6 +682,7 @@ export function Inventory() {
                   <input required type="number" min="1" value={formData.minimumStock ?? ''} onChange={e => setFormData({ ...formData, minimumStock: parseInt(e.target.value) })} className="w-full border-gray-300 rounded-xl p-2.5 border focus:ring-2 focus:ring-blue-600 text-sm outline-none" />
                 </div>
               </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">{tr(language, 'inv_purchase')}*</label>
@@ -554,6 +693,7 @@ export function Inventory() {
                   <input required type="number" min="0" step="0.01" value={formData.sellingPrice ?? ''} onChange={e => setFormData({ ...formData, sellingPrice: parseFloat(e.target.value) })} className="w-full border-gray-300 rounded-xl p-2.5 border focus:ring-2 focus:ring-blue-600 text-sm outline-none" />
                 </div>
               </div>
+
               <div className="flex justify-end gap-2 pt-3 border-t mt-4">
                 <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 border border-gray-300 rounded-xl text-gray-700 font-semibold text-sm hover:bg-gray-50">{tr(language, 'cancel')}</button>
                 <button type="submit" className="px-5 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-bold text-sm shadow-md shadow-blue-500/20">{tr(language, 'save')}</button>

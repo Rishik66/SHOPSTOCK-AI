@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Package, ShoppingCart, Bot, RefreshCw, Camera, X, LogOut, Store, Star } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingCart, Bot, RefreshCw, Barcode, X, LogOut, Store, Star } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { tr } from '../i18n';
 import { Language, Page } from '../types';
@@ -13,7 +13,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
     { id: 'billing', icon: ShoppingCart, label: 'nav_billing' },
     { id: 'ai-assistant', icon: Bot, label: 'nav_ai' },
     { id: 'smart-restock', icon: RefreshCw, label: 'nav_restock' },
-    { id: 'invoice-scanner', icon: Camera, label: 'nav_invoice' },
+    { id: 'invoice-scanner', icon: Barcode, label: 'nav_invoice' },
     { id: 'reviews', icon: Star, label: 'nav_reviews' },
   ];
 
