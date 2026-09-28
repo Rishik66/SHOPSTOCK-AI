@@ -6,6 +6,7 @@ export interface VoiceStockChange {
   previousStock: number;
   newStock: number;
   type: 'ADD' | 'REMOVE';
+  isNew?: boolean;
 }
 
 export interface VoiceInventoryResult {
@@ -56,18 +57,144 @@ const NOISE_WORDS = [
   'karo', 'cheyi', 'kodi', 'jodo', 'seri', 'chalao'
 ];
 
-// Product name aliases/synonyms for Kirana items
-const PRODUCT_SYNONYMS: Record<string, string[]> = {
-  'biscuit': ['biscuits', 'buiscet', 'buiscets', 'biskit', 'biskoot', 'parle', 'parleg', 'parle-g'],
-  'milk': ['paal', 'doodh', 'haalu', 'amul milk', 'amul'],
-  'noodles': ['noodle', 'maggi', 'meggi', '2 minute'],
-  'salt': ['namak', 'uppu', 'tata', 'tata salt'],
-  'atta': ['flour', 'aashirvaad', 'gehun', 'godhuma', 'aata'],
-  'bread': ['loaf', 'britannia', 'bun', 'double roti'],
-  'coke': ['coca-cola', 'coca cola', 'cocacola', 'cold drink', 'soft drink'],
-  'thums up': ['thumbs up', 'thumbsup', 'thumsup', 'thumbs'],
-  'detergent': ['surf', 'surf excel', 'detergent powder', 'washing powder', 'surfexcel'],
-  'colgate': ['toothpaste', 'paste', 'tooth paste', 'dant manjan']
+interface KiranaCatalogItem {
+  name: string;
+  category: string;
+  purchasePrice: number;
+  sellingPrice: number;
+  minimumStock: number;
+  aliases: string[];
+}
+
+// Built-in Indian Kirana Catalog with extensive phonetic aliases
+const KIRANA_CATALOG: Record<string, KiranaCatalogItem> = {
+  biscuit: {
+    name: 'Parle-G Biscuits',
+    category: 'Biscuits',
+    purchasePrice: 8,
+    sellingPrice: 10,
+    minimumStock: 20,
+    aliases: [
+      'biscuit', 'biscuits', 'buiscet', 'buiscets', 'biuscet', 'biuscets', 
+      'biskit', 'biskits', 'biskoot', 'biskut', 'parle', 'parleg', 'parle-g', 
+      'cookie', 'cookies', 'britannia biscuit', 'marie', 'oreo', 'monaco', '50-50'
+    ]
+  },
+  milk: {
+    name: 'Amul Milk',
+    category: 'Dairy',
+    purchasePrice: 54,
+    sellingPrice: 60,
+    minimumStock: 10,
+    aliases: [
+      'milk', 'milk packet', 'milk packets', 'paal', 'doodh', 'dudha', 
+      'haalu', 'amul milk', 'amul', 'nandini', 'mother dairy', 'taaza', 'gold'
+    ]
+  },
+  noodles: {
+    name: 'Maggi',
+    category: 'Noodles',
+    purchasePrice: 12,
+    sellingPrice: 14,
+    minimumStock: 10,
+    aliases: ['maggi', 'meggi', 'maggie', 'noodle', 'noodles', '2 minute', 'yippee', 'top ramen']
+  },
+  salt: {
+    name: 'Tata Salt',
+    category: 'Spices',
+    purchasePrice: 20,
+    sellingPrice: 25,
+    minimumStock: 15,
+    aliases: ['salt', 'tata salt', 'tata', 'namak', 'uppu', 'iodized salt']
+  },
+  atta: {
+    name: 'Aashirvaad Atta',
+    category: 'Flour',
+    purchasePrice: 55,
+    sellingPrice: 65,
+    minimumStock: 10,
+    aliases: ['atta', 'aata', 'flour', 'wheat', 'gehun', 'aashirvaad', 'godhuma', 'chakki atta']
+  },
+  bread: {
+    name: 'Britannia Bread',
+    category: 'Bakery',
+    purchasePrice: 38,
+    sellingPrice: 45,
+    minimumStock: 10,
+    aliases: ['bread', 'britannia', 'loaf', 'bun', 'double roti', 'pav', 'brown bread', 'white bread']
+  },
+  coke: {
+    name: 'Coca-Cola',
+    category: 'Beverages',
+    purchasePrice: 38,
+    sellingPrice: 45,
+    minimumStock: 12,
+    aliases: ['coke', 'coca-cola', 'coca cola', 'cocacola', 'cold drink', 'soft drink', 'pepsi', 'sprite', 'fanta']
+  },
+  thumsup: {
+    name: 'Thums Up',
+    category: 'Beverages',
+    purchasePrice: 38,
+    sellingPrice: 45,
+    minimumStock: 12,
+    aliases: ['thums up', 'thumbs up', 'thumbsup', 'thumsup', 'thumbs', 'toofan']
+  },
+  detergent: {
+    name: 'Surf Excel',
+    category: 'Detergent',
+    purchasePrice: 55,
+    sellingPrice: 65,
+    minimumStock: 8,
+    aliases: ['surf', 'surf excel', 'detergent', 'washing powder', 'surfexcel', 'tide', 'ariel', 'rin', 'wheel']
+  },
+  colgate: {
+    name: 'Colgate',
+    category: 'Personal Care',
+    purchasePrice: 75,
+    sellingPrice: 90,
+    minimumStock: 10,
+    aliases: ['colgate', 'toothpaste', 'paste', 'tooth paste', 'dant manjan', 'pepsodent', 'closeup', 'sensodyne']
+  },
+  oil: {
+    name: 'Cooking Oil',
+    category: 'Oils & Ghee',
+    purchasePrice: 110,
+    sellingPrice: 130,
+    minimumStock: 10,
+    aliases: ['oil', 'tel', 'enne', 'taila', 'sunflower oil', 'mustard oil', 'fortune', 'refined oil', 'ghee']
+  },
+  rice: {
+    name: 'Basmati Rice',
+    category: 'Grains',
+    purchasePrice: 60,
+    sellingPrice: 75,
+    minimumStock: 15,
+    aliases: ['rice', 'chawal', 'biyyam', 'akki', 'basmati', 'sona masoori']
+  },
+  sugar: {
+    name: 'Sugar',
+    category: 'Groceries',
+    purchasePrice: 40,
+    sellingPrice: 46,
+    minimumStock: 20,
+    aliases: ['sugar', 'chini', 'cheeni', 'sakkare', 'panchadara']
+  },
+  tea: {
+    name: 'Tea (Chai)',
+    category: 'Beverages',
+    purchasePrice: 70,
+    sellingPrice: 85,
+    minimumStock: 10,
+    aliases: ['tea', 'chai', 'cha', 'tea powder', 'taj mahal', 'red label', 'wagh bakri', 'tata tea']
+  },
+  soap: {
+    name: 'Bath Soap',
+    category: 'Personal Care',
+    purchasePrice: 28,
+    sellingPrice: 35,
+    minimumStock: 15,
+    aliases: ['soap', 'sabun', 'lifebuoy', 'dettol', 'lux', 'dove', 'santoor']
+  }
 };
 
 /**
@@ -76,7 +203,6 @@ const PRODUCT_SYNONYMS: Record<string, string[]> = {
 function normalizeSpokenText(raw: string): string {
   let text = raw.toLowerCase().trim();
 
-  // Replace multi-word numbers first (e.g. "twenty five")
   Object.entries(NUMBER_WORDS)
     .sort((a, b) => b[0].length - a[0].length)
     .forEach(([word, num]) => {
@@ -85,46 +211,6 @@ function normalizeSpokenText(raw: string): string {
     });
 
   return text;
-}
-
-/**
- * Searches for best matching product from user's actual inventory
- */
-function matchProduct(queryText: string, products: Product[]): Product | null {
-  const cleanQ = queryText.toLowerCase().trim();
-  if (!cleanQ) return null;
-
-  // 1. Direct match on product name or category
-  const directMatch = products.find(p => 
-    p.name.toLowerCase() === cleanQ ||
-    p.name.toLowerCase().includes(cleanQ) ||
-    cleanQ.includes(p.name.toLowerCase())
-  );
-  if (directMatch) return directMatch;
-
-  // 2. Check synonyms (e.g. "buiscets" -> "biscuit" -> "Parle-G Biscuits")
-  for (const [key, aliases] of Object.entries(PRODUCT_SYNONYMS)) {
-    if (cleanQ.includes(key) || aliases.some(alias => cleanQ.includes(alias) || alias.includes(cleanQ))) {
-      const synMatch = products.find(p => {
-        const pName = p.name.toLowerCase();
-        const pCat = p.category.toLowerCase();
-        return pName.includes(key) || pCat.includes(key) || aliases.some(a => pName.includes(a) || pCat.includes(a));
-      });
-      if (synMatch) return synMatch;
-    }
-  }
-
-  // 3. Token-based word match (length >= 3)
-  const qTokens = cleanQ.split(/\s+/).filter(w => w.length >= 3 && !NOISE_WORDS.includes(w));
-  for (const token of qTokens) {
-    const tokenMatch = products.find(p => 
-      p.name.toLowerCase().includes(token) || 
-      p.category.toLowerCase().includes(token)
-    );
-    if (tokenMatch) return tokenMatch;
-  }
-
-  return null;
 }
 
 /**
@@ -137,6 +223,89 @@ function cleanItemPhrase(phrase: string): string {
     cleaned = cleaned.replace(regex, ' ');
   });
   return cleaned.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Matches an item query to an existing product in inventory OR auto-creates a product template
+ */
+function matchOrMakeProduct(queryText: string, products: Product[]): { product: Product; isNew: boolean } {
+  const cleanQ = queryText.toLowerCase().trim();
+
+  // 1. Direct match on product name or category in current inventory
+  const directMatch = products.find(p => 
+    p.name.toLowerCase() === cleanQ ||
+    p.name.toLowerCase().includes(cleanQ) ||
+    cleanQ.includes(p.name.toLowerCase())
+  );
+  if (directMatch) return { product: directMatch, isNew: false };
+
+  // 2. Check Kirana catalog templates and aliases
+  for (const [key, template] of Object.entries(KIRANA_CATALOG)) {
+    const isCatalogMatch = (
+      cleanQ === key ||
+      cleanQ.includes(key) ||
+      cleanQ.startsWith(key.slice(0, 4)) ||
+      template.aliases.some(alias => cleanQ === alias || cleanQ.includes(alias) || alias.includes(cleanQ))
+    );
+
+    if (isCatalogMatch) {
+      // Check if user already has an item matching this catalog template
+      const existingInInventory = products.find(p => {
+        const pName = p.name.toLowerCase();
+        const tName = template.name.toLowerCase();
+        return (
+          pName.includes(key) ||
+          pName.includes(tName) ||
+          tName.includes(pName) ||
+          template.aliases.some(a => pName.includes(a))
+        );
+      });
+
+      if (existingInInventory) {
+        return { product: existingInInventory, isNew: false };
+      }
+
+      // If product not yet in user inventory, auto-create it from Kirana template!
+      const newFromCatalog: Product = {
+        id: 'prod_' + Date.now().toString() + Math.random().toString(36).slice(2, 6),
+        name: template.name,
+        category: template.category,
+        stock: 0,
+        purchasePrice: template.purchasePrice,
+        sellingPrice: template.sellingPrice,
+        minimumStock: template.minimumStock
+      };
+      return { product: newFromCatalog, isNew: true };
+    }
+  }
+
+  // 3. Token-based word match in existing inventory
+  const tokens = cleanQ.split(/\s+/).filter(w => w.length >= 3 && !NOISE_WORDS.includes(w));
+  for (const token of tokens) {
+    const tokenMatch = products.find(p => 
+      p.name.toLowerCase().includes(token) || 
+      p.category.toLowerCase().includes(token)
+    );
+    if (tokenMatch) return { product: tokenMatch, isNew: false };
+  }
+
+  // 4. Auto-create as new custom product so voice restock never fails
+  const formattedName = cleanQ
+    .split(/\s+/)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+
+  const customProduct: Product = {
+    id: 'prod_' + Date.now().toString() + Math.random().toString(36).slice(2, 6),
+    name: formattedName || 'New Product',
+    category: 'General Store',
+    stock: 0,
+    purchasePrice: 20,
+    sellingPrice: 25,
+    minimumStock: 10
+  };
+
+  return { product: customProduct, isNew: true };
 }
 
 /**
@@ -163,14 +332,16 @@ export function parseVoiceInventoryCommand(
   );
   const actionType: 'ADD' | 'REMOVE' = isRemove ? 'REMOVE' : 'ADD';
 
-  // Strip initial action indicators and trailing context
+  // Strip inventory context phrases
   let workingText = normalized;
-  NOISE_WORDS.forEach(noise => {
-    const regex = new RegExp(`\\b${noise}\\b`, 'gi');
-    workingText = workingText.replace(regex, ' ');
+  [
+    'to the inventory', 'to inventory', 'in the inventory', 'in inventory', 
+    'from the inventory', 'from inventory', 'into the inventory', 'into inventory'
+  ].forEach(phrase => {
+    workingText = workingText.replace(new RegExp(phrase, 'gi'), ' ');
   });
 
-  // Strip explicit action words: 'add', 'remove', 'reduce'
+  // Strip action prefixes: 'add', 'remove', 'reduce'
   workingText = workingText.replace(/\b(add|remove|reduce|plus|minus)\b/gi, ' ');
 
   // Split on conjunctions: 'and', 'aur', 'mariyu', 'mattu', commas, plus
@@ -199,29 +370,28 @@ export function parseVoiceInventoryCommand(
     const cleanedQuery = cleanItemPhrase(itemPhrase);
     if (!cleanedQuery) return;
 
-    const matchedProduct = matchProduct(cleanedQuery, products);
-    if (matchedProduct) {
-      const existing = changes.find(c => c.product.id === matchedProduct.id);
-      if (existing) {
-        existing.quantity += qty;
-        existing.newStock = actionType === 'ADD' 
-          ? existing.previousStock + existing.quantity 
-          : Math.max(0, existing.previousStock - existing.quantity);
-      } else {
-        const previousStock = matchedProduct.stock;
-        const newStock = actionType === 'ADD' 
-          ? previousStock + qty 
-          : Math.max(0, previousStock - qty);
-        changes.push({
-          product: matchedProduct,
-          quantity: qty,
-          previousStock,
-          newStock,
-          type: actionType
-        });
-      }
+    const { product, isNew } = matchOrMakeProduct(cleanedQuery, products);
+
+    const existingChange = changes.find(c => c.product.name.toLowerCase() === product.name.toLowerCase());
+    if (existingChange) {
+      existingChange.quantity += qty;
+      existingChange.newStock = actionType === 'ADD' 
+        ? existingChange.previousStock + existingChange.quantity 
+        : Math.max(0, existingChange.previousStock - existingChange.quantity);
     } else {
-      unmatched.push(cleanedQuery);
+      const previousStock = isNew ? 0 : product.stock;
+      const newStock = actionType === 'ADD' 
+        ? previousStock + qty 
+        : Math.max(0, previousStock - qty);
+
+      changes.push({
+        product,
+        quantity: qty,
+        previousStock,
+        newStock,
+        type: actionType,
+        isNew
+      });
     }
   };
 
@@ -243,7 +413,7 @@ export function parseVoiceInventoryCommand(
     return {
       success: false,
       changes: [],
-      feedback: `Could not identify products from "${rawSpeech}". Try saying e.g. "Add 60 biscuits and 6 milk packets".`,
+      feedback: `Could not identify product names from "${rawSpeech}". Try saying e.g. "Add 60 biscuit packets and 6 milk packets to the inventory".`,
       unmatched
     };
   }

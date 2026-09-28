@@ -123,20 +123,30 @@ export function Inventory() {
 
     if (!result.success || result.changes.length === 0) {
       setVoiceError(result.feedback);
-      speak("Could not match those products in inventory. Please try again.");
+      speak(result.feedback || "Could not match those products in inventory. Please try again.");
       return;
     }
 
-    // Apply stock updates to products state
-    const updatedProducts = products.map(p => {
-      const change = result.changes.find(c => c.product.id === p.id);
-      if (change) {
-        return { ...p, stock: change.newStock };
+    // Apply stock updates to existing products, and add any new products seamlessly
+    let nextProducts = [...products];
+
+    result.changes.forEach(change => {
+      const existingIdx = nextProducts.findIndex(p => 
+        p.id === change.product.id || 
+        p.name.toLowerCase() === change.product.name.toLowerCase()
+      );
+      if (existingIdx >= 0) {
+        nextProducts[existingIdx] = { ...nextProducts[existingIdx], stock: change.newStock };
+      } else {
+        // Auto-create new product in inventory with the new stock!
+        nextProducts.push({
+          ...change.product,
+          stock: change.newStock
+        });
       }
-      return p;
     });
 
-    setProducts(updatedProducts);
+    setProducts(nextProducts);
     setVoiceFeedback(result.feedback);
     setVoiceChanges(result.changes);
     addNotification({ type: 'success', message: result.feedback });

@@ -49,9 +49,9 @@ const NOISE_WORDS = [
 
 // Product name aliases/synonyms for Kirana items
 const PRODUCT_SYNONYMS: Record<string, string[]> = {
-  'biscuit': ['biscuits', 'buiscet', 'buiscets', 'biskit', 'biskoot', 'parle', 'parleg', 'parle-g'],
-  'milk': ['paal', 'doodh', 'haalu', 'amul milk', 'amul'],
-  'noodles': ['noodle', 'maggi', 'meggi', '2 minute'],
+  'biscuit': ['biscuits', 'biscuit', 'buiscet', 'buiscets', 'biuscet', 'biuscets', 'biskit', 'biskits', 'biskoot', 'biskut', 'parle', 'parleg', 'parle-g'],
+  'milk': ['paal', 'doodh', 'haalu', 'amul milk', 'amul', 'dudha', 'milk packets', 'milk packet'],
+  'noodles': ['noodle', 'noodles', 'maggi', 'meggi', '2 minute', 'yippee'],
   'salt': ['namak', 'uppu', 'tata', 'tata salt'],
   'atta': ['flour', 'aashirvaad', 'gehun', 'godhuma', 'aata'],
   'bread': ['loaf', 'britannia', 'bun', 'double roti'],

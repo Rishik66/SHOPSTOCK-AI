@@ -136,19 +136,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setProductsState(DEMO_PRODUCTS);
         setTransactionsState(demoTxns);
       } else {
-        // New real user gets a fresh store with starter sample template
-        const initialProducts: Product[] = [
-          { id: '1', name: 'Sample Item 1', category: 'General', stock: 20, purchasePrice: 40, sellingPrice: 50, minimumStock: 5 },
-          { id: '2', name: 'Sample Item 2', category: 'General', stock: 15, purchasePrice: 80, sellingPrice: 100, minimumStock: 5 }
-        ];
-        saveUserProducts(userId, initialProducts);
+        // New real user gets full standard Kirana product catalog so all voice commands work immediately
+        saveUserProducts(userId, DEMO_PRODUCTS);
         saveUserTransactions(userId, []);
         setUserInitialized(userId);
-        setProductsState(initialProducts);
+        setProductsState(DEMO_PRODUCTS);
         setTransactionsState([]);
       }
     } else {
-      setProductsState(loadUserProducts(userId));
+      const loaded = loadUserProducts(userId);
+      // Upgrade existing user accounts that had the dummy "Sample Item" placeholders to real Kirana catalog
+      if (loaded.length === 0 || (loaded.length <= 2 && loaded.some(p => p.name.includes('Sample Item')))) {
+        saveUserProducts(userId, DEMO_PRODUCTS);
+        setProductsState(DEMO_PRODUCTS);
+      } else {
+        setProductsState(loaded);
+      }
       setTransactionsState(loadUserTransactions(userId));
     }
   };
