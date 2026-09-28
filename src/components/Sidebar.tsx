@@ -1,11 +1,11 @@
 import React from 'react';
-import { LayoutDashboard, Package, ShoppingCart, Bot, RefreshCw, Camera, X } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingCart, Bot, RefreshCw, Camera, X, LogOut, Store } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { tr } from '../i18n';
 import { Language, Page } from '../types';
 
 export function Sidebar({ onClose }: { onClose?: () => void }) {
-  const { currentPage, setCurrentPage, language, setLanguage, resetDemoData } = useApp();
+  const { currentPage, setCurrentPage, language, setLanguage, resetDemoData, currentUser, logout } = useApp();
 
   const navItems: { id: Page; icon: React.ElementType; label: string }[] = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'nav_dashboard' },
@@ -29,8 +29,18 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           </button>
         )}
       </div>
-      <div className="p-4 border-b border-gray-200">
-        <div className="text-sm font-medium text-gray-900">Ravi General Store</div>
+      <div className="p-4 border-b border-gray-100 bg-slate-50 flex items-center gap-3">
+        <div className="w-9 h-9 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+          <Store size={18} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-bold text-gray-900 truncate">
+            {currentUser?.shopName || 'ShopStock Store'}
+          </div>
+          <div className="text-xs text-gray-500 truncate">
+            {currentUser?.ownerName || 'Store Owner'} • {currentUser?.category || 'Retail'}
+          </div>
+        </div>
       </div>
       <nav className="flex-1 overflow-y-auto p-4 space-y-1">
         {navItems.map(item => {
@@ -72,6 +82,17 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           className="w-full text-sm text-red-600 hover:bg-red-50 p-2 rounded-md font-medium"
         >
           {tr(language, 'reset')}
+        </button>
+        <button
+          onClick={() => {
+            if (window.confirm("Are you sure you want to log out?")) {
+              logout();
+            }
+          }}
+          className="w-full flex items-center justify-center gap-2 text-sm text-gray-700 bg-gray-100 hover:bg-red-50 hover:text-red-700 p-2.5 rounded-lg font-semibold transition-colors"
+        >
+          <LogOut size={16} />
+          <span>Log Out</span>
         </button>
       </div>
     </div>

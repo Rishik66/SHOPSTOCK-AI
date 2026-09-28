@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { Menu, Bell } from 'lucide-react';
+import { Menu, Bell, LogOut, User } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { tr } from '../i18n';
 
 export function Header({ onMenuClick }: { onMenuClick: () => void }) {
-  const { currentPage, language, notifications } = useApp();
+  const { currentPage, language, notifications, currentUser, logout } = useApp();
   const [showNotifs, setShowNotifs] = useState(false);
 
   const getTitle = () => {
@@ -27,8 +27,11 @@ export function Header({ onMenuClick }: { onMenuClick: () => void }) {
         </button>
         <h1 className="text-xl font-semibold text-gray-900">{getTitle()}</h1>
       </div>
-      <div className="flex items-center gap-4">
-        <div className="hidden sm:block text-sm font-medium text-gray-600">Ravi General Store</div>
+      <div className="flex items-center gap-3 sm:gap-4">
+        <div className="hidden sm:flex items-center gap-2 text-sm font-semibold text-gray-800 bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-lg">
+          <User size={16} className="text-blue-600" />
+          <span>{currentUser?.shopName || 'My Store'}</span>
+        </div>
         <div className="relative">
           <button
             onClick={() => setShowNotifs(!showNotifs)}
@@ -70,6 +73,19 @@ export function Header({ onMenuClick }: { onMenuClick: () => void }) {
             </div>
           )}
         </div>
+
+        <button
+          onClick={() => {
+            if (window.confirm("Are you sure you want to log out?")) {
+              logout();
+            }
+          }}
+          title="Log Out"
+          className="flex items-center gap-1.5 p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm font-medium"
+        >
+          <LogOut size={18} />
+          <span className="hidden md:inline">Logout</span>
+        </button>
       </div>
     </header>
   );

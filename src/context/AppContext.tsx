@@ -1,28 +1,30 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Product, Transaction, Language, AppNotification, Page } from '../types';
-import { loadProducts, saveProducts as storageSaveProducts, loadTransactions, saveTransactions as storageSaveTransactions, loadLanguage, saveLanguage as storageSaveLanguage, isInitialized, setInitialized, resetAllData } from '../utils/storage';
+import { Product, Transaction, Language, AppNotification, Page, UserAccount } from '../types';
+import {
+  getCurrentUser,
+  setCurrentUser,
+  getRegisteredUsers,
+  saveRegisteredUsers,
+  loadUserProducts,
+  saveUserProducts,
+  loadUserTransactions,
+  saveUserTransactions,
+  isUserInitialized,
+  setUserInitialized,
+  resetUserData,
+  loadLanguage,
+  saveLanguage as storageSaveLanguage,
+} from '../utils/storage';
 
-interface AppContextType {
-  products: Product[];
-  transactions: Transaction[];
-  language: Language;
-  notifications: AppNotification[];
-  currentPage: Page;
-  setProducts: (products: Product[]) => void;
-  setTransactions: (transactions: Transaction[]) => void;
-  setLanguage: (lang: Language) => void;
-  setCurrentPage: (page: Page) => void;
-  addNotification: (notification: Omit<AppNotification, 'id' | 'timestamp'>) => void;
-  resetDemoData: () => void;
-}
-
-const AppContext = createContext<AppContextType | null>(null);
-
-export function useApp() {
-  const ctx = useContext(AppContext);
-  if (!ctx) throw new Error('useApp must be used within AppProvider');
-  return ctx;
-}
+export const DEMO_USER: UserAccount = {
+  id: 'demo_ravi',
+  email: 'demo@shopstock.ai',
+  password: 'demo',
+  shopName: 'Ravi General Store',
+  ownerName: 'Ravi Kumar',
+  category: 'General Store',
+  createdAt: '2026-01-01T00:00:00.000Z'
+};
 
 const DEMO_PRODUCTS: Product[] = [
   { id: '1', name: 'Maggi', category: 'Noodles', stock: 8, purchasePrice: 12, sellingPrice: 14, minimumStock: 10 },
@@ -78,7 +80,35 @@ function generateDemoTransactions(products: Product[]): Transaction[] {
   return txns;
 }
 
+interface AppContextType {
+  currentUser: UserAccount | null;
+  products: Product[];
+  transactions: Transaction[];
+  language: Language;
+  notifications: AppNotification[];
+  currentPage: Page;
+  setProducts: (products: Product[]) => void;
+  setTransactions: (transactions: Transaction[]) => void;
+  setLanguage: (lang: Language) => void;
+  setCurrentPage: (page: Page) => void;
+  addNotification: (notification: Omit<AppNotification, 'id' | 'timestamp'>) => void;
+  resetDemoData: () => void;
+  login: (email: string, pass: string) => { success: boolean; error?: string };
+  signup: (data: Omit<UserAccount, 'id' | 'createdAt'>) => { success: boolean; error?: string };
+  loginDemo: () => void;
+  logout: () => void;
+}
+
+const AppContext = createContext<AppContextType | null>(null);
+
+export function useApp() {
+  const ctx = useContext(AppContext);
+  if (!ctx) throw new Error('useApp must be used within AppProvider');
+  return ctx;
+}
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
+  const [currentUser, setCurrentUserState] = useState<UserAccount | null>(null);
   const [products, setProductsState] = useState<Product[]>([]);
   const [transactions, setTransactionsState] = useState<Transaction[]>([]);
   const [language, setLanguageState] = useState<Language>('en');
@@ -86,36 +116,135 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [ready, setReady] = useState(false);
 
-  const initData = () => {
-    const lang = loadLanguage();
-    setLanguageState(lang);
-
-    if (!isInitialized()) {
-      storageSaveProducts(DEMO_PRODUCTS);
-      const demoTxns = generateDemoTransactions(DEMO_PRODUCTS);
-      storageSaveTransactions(demoTxns);
-      setInitialized();
-      setProductsState(DEMO_PRODUCTS);
-      setTransactionsState(demoTxns);
-    } else {
-      setProductsState(loadProducts());
-      setTransactionsState(loadTransactions());
+  // Initialize or switch store data based on active user
+  const loadUserData = (user: UserAccount | null) => {
+    if (!user) {
+      setProductsState([]);
+      setTransactionsState([]);
+      return;
     }
-    setReady(true);
+
+    const userId = user.id;
+
+    if (!isUserInitialized(userId)) {
+      if (userId === DEMO_USER.id) {
+        // Pre-populate demo store for Ravi General Store
+        saveUserProducts(userId, DEMO_PRODUCTS);
+        const demoTxns = generateDemoTransactions(DEMO_PRODUCTS);
+        saveUserTransactions(userId, demoTxns);
+        setUserInitialized(userId);
+        setProductsState(DEMO_PRODUCTS);
+        setTransactionsState(demoTxns);
+      } else {
+        // New real user gets a fresh store with starter sample template
+        const initialProducts: Product[] = [
+          { id: '1', name: 'Sample Item 1', category: 'General', stock: 20, purchasePrice: 40, sellingPrice: 50, minimumStock: 5 },
+          { id: '2', name: 'Sample Item 2', category: 'General', stock: 15, purchasePrice: 80, sellingPrice: 100, minimumStock: 5 }
+        ];
+        saveUserProducts(userId, initialProducts);
+        saveUserTransactions(userId, []);
+        setUserInitialized(userId);
+        setProductsState(initialProducts);
+        setTransactionsState([]);
+      }
+    } else {
+      setProductsState(loadUserProducts(userId));
+      setTransactionsState(loadUserTransactions(userId));
+    }
   };
 
   useEffect(() => {
-    initData();
+    // Load language preference
+    const lang = loadLanguage();
+    setLanguageState(lang);
+
+    // Ensure demo user exists in registered users
+    const users = getRegisteredUsers();
+    if (!users.some(u => u.email === DEMO_USER.email)) {
+      saveRegisteredUsers([...users, DEMO_USER]);
+    }
+
+    // Load active session
+    const savedUser = getCurrentUser();
+    if (savedUser) {
+      setCurrentUserState(savedUser);
+      loadUserData(savedUser);
+    }
+
+    setReady(true);
   }, []);
+
+  const login = (email: string, pass: string): { success: boolean; error?: string } => {
+    const cleanEmail = email.trim().toLowerCase();
+    const users = getRegisteredUsers();
+    const user = users.find(u => u.email.toLowerCase() === cleanEmail);
+
+    if (!user) {
+      return { success: false, error: 'No account found with this email. Please create an account.' };
+    }
+
+    if (user.password !== pass) {
+      return { success: false, error: 'Incorrect password. Please try again.' };
+    }
+
+    setCurrentUser(user);
+    setCurrentUserState(user);
+    loadUserData(user);
+    setCurrentPage('dashboard');
+    return { success: true };
+  };
+
+  const signup = (data: Omit<UserAccount, 'id' | 'createdAt'>): { success: boolean; error?: string } => {
+    const cleanEmail = data.email.trim().toLowerCase();
+    const users = getRegisteredUsers();
+
+    if (users.some(u => u.email.toLowerCase() === cleanEmail)) {
+      return { success: false, error: 'An account with this email already exists. Please log in.' };
+    }
+
+    const newUser: UserAccount = {
+      ...data,
+      id: 'usr_' + Date.now().toString() + Math.random().toString(36).slice(2, 7),
+      email: cleanEmail,
+      createdAt: new Date().toISOString()
+    };
+
+    const updatedUsers = [...users, newUser];
+    saveRegisteredUsers(updatedUsers);
+    setCurrentUser(newUser);
+    setCurrentUserState(newUser);
+    loadUserData(newUser);
+    setCurrentPage('dashboard');
+    return { success: true };
+  };
+
+  const loginDemo = () => {
+    setCurrentUser(DEMO_USER);
+    setCurrentUserState(DEMO_USER);
+    loadUserData(DEMO_USER);
+    setCurrentPage('dashboard');
+  };
+
+  const logout = () => {
+    setCurrentUser(null);
+    setCurrentUserState(null);
+    setProductsState([]);
+    setTransactionsState([]);
+    setCurrentPage('dashboard');
+  };
 
   const setProducts = (p: Product[]) => {
     setProductsState(p);
-    storageSaveProducts(p);
+    if (currentUser) {
+      saveUserProducts(currentUser.id, p);
+    }
   };
 
   const setTransactions = (t: Transaction[]) => {
     setTransactionsState(t);
-    storageSaveTransactions(t);
+    if (currentUser) {
+      saveUserTransactions(currentUser.id, t);
+    }
   };
 
   const setLanguage = (l: Language) => {
@@ -133,20 +262,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const resetDemoData = () => {
-    resetAllData();
-    initData();
+    if (currentUser) {
+      resetUserData(currentUser.id);
+      loadUserData(currentUser);
+    }
   };
 
   if (!ready) return null;
 
   return (
     <AppContext.Provider value={{
+      currentUser,
       products, setProducts,
       transactions, setTransactions,
       language, setLanguage,
       notifications, addNotification,
       currentPage, setCurrentPage,
-      resetDemoData
+      resetDemoData,
+      login, signup, loginDemo, logout
     }}>
       {children}
     </AppContext.Provider>

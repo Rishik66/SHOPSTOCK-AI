@@ -5,7 +5,7 @@ import { tr } from '../i18n';
 import { Product, CartItem } from '../types';
 
 export function Billing() {
-  const { products, setProducts, transactions, setTransactions, language, addNotification } = useApp();
+  const { products, setProducts, transactions, setTransactions, language, addNotification, currentUser } = useApp();
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showReceipt, setShowReceipt] = useState<string | null>(null);
@@ -192,7 +192,7 @@ export function Billing() {
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col max-h-full">
             <div className="p-6 overflow-y-auto print:p-0">
               <div className="text-center mb-6">
-                <h2 className="text-xl font-bold mb-1">Ravi General Store</h2>
+                <h2 className="text-xl font-bold mb-1">{currentUser?.shopName || 'ShopStock Store'}</h2>
                 <p className="text-sm text-gray-500">{tr(language, 'bill_receipt')}</p>
                 <div className="text-xs text-gray-400 mt-2 flex justify-between">
                   <span>{tr(language, 'bill_date')}: {new Date().toLocaleDateString()}</span>

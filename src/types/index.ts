@@ -1,6 +1,16 @@
 export type Language = 'en' | 'te' | 'hi' | 'kn';
 export type Page = 'dashboard' | 'inventory' | 'billing' | 'ai-assistant' | 'smart-restock' | 'invoice-scanner';
 
+export interface UserAccount {
+  id: string;
+  email: string;
+  password: string;
+  shopName: string;
+  ownerName: string;
+  category: string;
+  createdAt: string;
+}
+
 export interface Product {
   id: string;
   name: string;

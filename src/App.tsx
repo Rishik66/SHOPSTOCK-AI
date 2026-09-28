@@ -8,8 +8,14 @@ import { AIAssistant } from './pages/AIAssistant';
 import { SmartRestock } from './pages/SmartRestock';
 import { InvoiceScanner } from './pages/InvoiceScanner';
 
+import { AuthPage } from './pages/AuthPage';
+
 function AppContent() {
-  const { currentPage } = useApp();
+  const { currentUser, currentPage } = useApp();
+
+  if (!currentUser) {
+    return <AuthPage />;
+  }
 
   return (
     <Layout>
