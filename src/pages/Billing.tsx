@@ -63,6 +63,7 @@ export function Billing() {
     try {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = voiceLang || 'en-IN';
       utterance.rate = 1.0;
       window.speechSynthesis.speak(utterance);
     } catch {}
@@ -201,9 +202,9 @@ export function Billing() {
     setVoiceError(null);
     setVoiceFeedback(null);
 
-    const result = parseVoiceBillingCommand(speechText, products);
+    const result = parseVoiceBillingCommand(speechText, products, voiceLang);
 
-    if (result.action === 'NOT_UNDERSTOOD') {
+    if (result.action === 'NOT_UNDERSTOOD' || result.action === 'NO_ITEMS_FOUND' || result.action === 'OUT_OF_STOCK') {
       setVoiceError(result.feedback);
       speak(result.feedback);
       return;
@@ -229,18 +230,19 @@ export function Billing() {
     // ADD_ITEMS action: update cart with recognized items
     let updatedCart = [...cart];
     result.items.forEach(newItem => {
-      const existingIdx = updatedCart.findIndex(item => item.product.id === newItem.product.id);
+      const storeProduct = products.find(p => p.id === newItem.product.id) || newItem.product;
+      const existingIdx = updatedCart.findIndex(item => item.product.id === storeProduct.id);
       if (existingIdx >= 0) {
         const targetQty = updatedCart[existingIdx].quantity + newItem.quantity;
-        const finalQty = Math.min(newItem.product.stock, targetQty);
+        const finalQty = Math.min(storeProduct.stock, targetQty);
         updatedCart[existingIdx] = {
           ...updatedCart[existingIdx],
           quantity: finalQty
         };
       } else {
-        const finalQty = Math.min(newItem.product.stock, newItem.quantity);
+        const finalQty = Math.min(storeProduct.stock, newItem.quantity);
         if (finalQty > 0) {
-          updatedCart.push({ product: newItem.product, quantity: finalQty });
+          updatedCart.push({ product: storeProduct, quantity: finalQty });
         }
       }
     });
@@ -527,12 +529,22 @@ export function Billing() {
 
         {/* Voice Error Banner */}
         {voiceError && (
-          <div className="mt-2.5 p-2.5 bg-amber-500/90 text-white rounded-xl text-xs font-medium flex items-center justify-between gap-2 shadow-sm animate-fade-in">
+          <div className="mt-2.5 p-2.5 bg-amber-500/95 text-white rounded-xl text-xs font-semibold flex items-center justify-between gap-2 shadow-sm animate-fade-in">
             <div className="flex items-center gap-2">
               <AlertCircle size={15} className="text-white shrink-0" />
               <span>{voiceError}</span>
             </div>
-            <button onClick={() => setVoiceError(null)} className="font-bold px-2 py-0.5 hover:opacity-75">✕</button>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => speak(voiceError)}
+                title="Hear voice notice"
+                className="p-1 hover:bg-white/20 rounded-md transition-colors cursor-pointer"
+              >
+                <Volume2 size={15} />
+              </button>
+              <button onClick={() => setVoiceError(null)} className="font-bold px-2 py-0.5 hover:opacity-75 cursor-pointer">✕</button>
+            </div>
           </div>
         )}
 

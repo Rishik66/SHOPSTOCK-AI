@@ -1,5 +1,4 @@
 import { Product } from '../types';
-import { FMCG_BARCODE_CATALOG } from './barcodeService';
 
 export interface VoiceBillingItem {
   product: Product;
@@ -7,11 +6,12 @@ export interface VoiceBillingItem {
 }
 
 export interface VoiceBillingResult {
-  action: 'ADD_ITEMS' | 'COMPLETE_BILL' | 'CLEAR_CART' | 'NOT_UNDERSTOOD';
+  action: 'ADD_ITEMS' | 'COMPLETE_BILL' | 'CLEAR_CART' | 'NOT_UNDERSTOOD' | 'NO_ITEMS_FOUND' | 'OUT_OF_STOCK';
   items: VoiceBillingItem[];
   shouldCompleteBill: boolean;
   feedback: string;
   unmatchedTerms: string[];
+  outOfStockTerms?: string[];
 }
 
 // Multi-language number word mapper
@@ -56,7 +56,6 @@ const NUMBER_WORDS: Record<string, number> = {
 };
 
 // Packaging and filler terms to strip from product queries
-// Note: We deliberately do NOT include 'to' or 'for' here because they can be number homophones (two/four)
 const NOISE_WORDS = [
   'packets', 'packet', 'pack', 'packs', 'pouch', 'pouches', 'pkts', 'pkt', 'peket', 'peketu',
   'bottle', 'bottles', 'piece', 'pieces', 'pcs', 'pc', 'peice', 'peices',
@@ -64,7 +63,7 @@ const NOISE_WORDS = [
   'kilo', 'kilos', 'kg', 'kgs', 'gram', 'grams', 'gm', 'gms',
   'box', 'boxes', 'can', 'cans', 'dabba', 'dappe', 'bags', 'bag',
   'items', 'item', 'unit', 'units',
-  'of', 'in', 'please', 'kripya', 'doyacheyisi',
+  'of', 'in', 'please', 'kripya', 'doyacheyisi', 'dayavittu',
   'chahiye', 'kavali', 'beku', 'hai', 'undi', 'ide',
   'add', 'jodo', 'seri', 'chalao', 'put', 'daalo', 'veyyi', 'haaku'
 ];
@@ -128,25 +127,50 @@ const PRODUCT_SYNONYMS: Record<string, string[]> = {
 };
 
 /**
+ * Strips billing destination / prepositional phrases like:
+ * - "to the bill", "to bill", "in bill", "to cart", "bill me add karo"
+ * so that they do not get confused with numbers or product queries.
+ */
+function stripBillingPhrases(text: string): string {
+  let cleaned = ' ' + text.toLowerCase().trim() + ' ';
+
+  const billingDirectives = [
+    /(\b(?:add|put)\s+)?\b(?:to|into|in|on)\s+(?:the\s+|my\s+)?(?:bill|cart|receipt)\b/gi,
+    /\b(?:for\s+the\s+|for\s+)(?:bill|cart)\b/gi,
+    /\b(?:in|to)\s+(?:the\s+|my\s+)?(?:bill|cart)\b/gi,
+    /\b(?:the\s+)?(?:bill|cart)\s+(?:me\s+add\s+karo|me\s+daalo|lo\s+veyyi|alli\s+haaku)\b/gi,
+    /\b(?:the\s+)?(?:bill|cart)\s+(?:me|mein|lo|alli|ke\s+andar)\b/gi,
+    /\b(?:in|to)\s+bill\b/gi,
+    /\b(?:in|to)\s+cart\b/gi,
+    /\b(?:into|onto)\s+bill\b/gi,
+  ];
+
+  billingDirectives.forEach(regex => {
+    cleaned = cleaned.replace(regex, ' ');
+  });
+
+  return cleaned.replace(/\s+/g, ' ').trim();
+}
+
+/**
  * Normalizes speech text:
- * Converts homophones ("to" -> 2, "for" -> 4) and number words to digits
+ * Converts homophones ("to" -> 2, "for" -> 4) and number words to digits.
+ * Protects prepositions from being converted to numbers.
  */
 function normalizeSpokenText(raw: string): string {
-  let text = ' ' + raw.toLowerCase().trim() + ' ';
+  // 1. Strip billing phrases first
+  const preStripped = stripBillingPhrases(raw);
+  let text = ' ' + preStripped.toLowerCase().trim() + ' ';
 
-  // 1. Convert common speech recognition homophones for numbers when preceding a noun
-  // e.g. "to biscuits" -> "2 biscuits", "too milk" -> "2 milk"
-  text = text.replace(/\b(?:to|too)\b(?=\s+[a-z])/gi, ' 2 ');
-  // e.g. "for milk packets" -> "4 milk packets", "fore biscuits" -> "4 biscuits"
-  text = text.replace(/\b(?:for|fore)\b(?=\s+[a-z])/gi, ' 4 ');
-  // e.g. "ate biscuits" -> "8 biscuits"
+  // 2. Convert common speech recognition homophones for numbers ONLY when preceding a noun (not articles/prepositions)
+  // e.g. "to biscuits" -> "2 biscuits", but NOT "to the"
+  text = text.replace(/\b(?:to|too)\b(?=\s+(?!the\b|my\b|our\b|a\b|an\b|this\b|that\b|cart\b|bill\b|inventory\b)[a-z])/gi, ' 2 ');
+  text = text.replace(/\b(?:for|fore)\b(?=\s+(?!the\b|my\b|our\b|a\b|an\b|this\b|that\b|cart\b|bill\b|inventory\b)[a-z])/gi, ' 4 ');
   text = text.replace(/\b(?:ate)\b(?=\s+[a-z])/gi, ' 8 ');
-  // e.g. "tree/free biscuits" -> "3 biscuits"
   text = text.replace(/\b(?:tree|free)\b(?=\s+[a-z])/gi, ' 3 ');
-  // e.g. "won biscuit" -> "1 biscuit"
   text = text.replace(/\b(?:won|wan)\b(?=\s+[a-z])/gi, ' 1 ');
 
-  // 2. Replace spoken number words with digits (longest words first)
+  // 3. Replace spoken number words with digits (longest words first)
   Object.entries(NUMBER_WORDS)
     .sort((a, b) => b[0].length - a[0].length)
     .forEach(([word, num]) => {
@@ -158,7 +182,30 @@ function normalizeSpokenText(raw: string): string {
 }
 
 /**
- * Cleans packaging and filler words from an item phrase
+ * Extracts the user-facing product name requested by the user,
+ * keeping words like "oil packet" or "sunflower oil" while stripping command verbs.
+ */
+function extractRequestedItemName(rawChunk: string): string {
+  let name = rawChunk.toLowerCase();
+  // Strip numbers
+  name = name.replace(/\b\d+\b/g, ' ');
+  // Strip action and destination filler words
+  const stripWords = [
+    'add', 'jodo', 'seri', 'chalao', 'put', 'daalo', 'veyyi', 'haaku',
+    'please', 'kripya', 'doyacheyisi', 'dayavittu',
+    'i want', 'give me', 'give', 'chahiye', 'kavali', 'beku', 'hai', 'undi', 'ide',
+    'to the bill', 'to bill', 'in the bill', 'in bill', 'into bill', 'to the cart', 'to cart', 'in cart',
+    'bill me', 'bill mein', 'bill lo', 'bill alli', 'bill', 'cart',
+    'the', 'a', 'an'
+  ];
+  stripWords.forEach(w => {
+    name = name.replace(new RegExp(`\\b${w}\\b`, 'gi'), ' ');
+  });
+  return name.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Cleans packaging and filler words from an item phrase for database inventory matching
  */
 function cleanItemPhrase(phrase: string): string {
   let cleaned = phrase.toLowerCase();
@@ -170,12 +217,12 @@ function cleanItemPhrase(phrase: string): string {
 }
 
 /**
- * Searches for best matching product from user's actual inventory
- * with fallback to built-in FMCG catalog
+ * Strictly searches for matching product from user's ACTUAL inventory (products).
+ * NEVER falls back to external/dummy catalogs for billing.
  */
-function matchProduct(queryText: string, products: Product[]): Product | null {
+function matchProductInInventory(queryText: string, products: Product[]): Product | null {
   const cleanQ = queryText.toLowerCase().trim();
-  if (!cleanQ) return null;
+  if (!cleanQ || products.length === 0) return null;
 
   // 1. Direct match on product name or category
   const directMatch = products.find(p => 
@@ -185,10 +232,9 @@ function matchProduct(queryText: string, products: Product[]): Product | null {
   );
   if (directMatch) return directMatch;
 
-  // 2. Check synonyms (e.g. "buiscets" -> "biscuit" -> "Parle-G Biscuits")
+  // 2. Check synonyms against actual inventory products
   for (const [key, aliases] of Object.entries(PRODUCT_SYNONYMS)) {
     if (cleanQ.includes(key) || aliases.some(alias => cleanQ.includes(alias) || alias.includes(cleanQ))) {
-      // Find a product in inventory that matches this key or any alias
       const synMatch = products.find(p => {
         const pName = p.name.toLowerCase();
         const pCat = p.category.toLowerCase();
@@ -208,44 +254,22 @@ function matchProduct(queryText: string, products: Product[]): Product | null {
     if (tokenMatch) return tokenMatch;
   }
 
-  // 4. Fallback: Check built-in Indian FMCG Catalog (Parle-G, Maggi, Amul Milk, Tata Salt, etc.)
-  for (const catalogItem of FMCG_BARCODE_CATALOG) {
-    const catName = catalogItem.name.toLowerCase();
-    const catCat = catalogItem.category.toLowerCase();
-    const catAliases = catalogItem.aliases?.map(a => a.toLowerCase()) || [];
-
-    if (
-      cleanQ.includes(catName) || 
-      catName.includes(cleanQ) || 
-      catAliases.some(a => cleanQ.includes(a) || a.includes(cleanQ))
-    ) {
-      // Return a generated product structure from catalog
-      return {
-        id: 'fmcg_' + catalogItem.barcode,
-        name: catalogItem.name,
-        category: catalogItem.category,
-        stock: 50,
-        purchasePrice: catalogItem.purchasePrice,
-        sellingPrice: catalogItem.sellingPrice,
-        minimumStock: catalogItem.minimumStock,
-        barcode: catalogItem.barcode
-      };
-    }
-  }
-
   return null;
 }
 
 /**
  * Parses spoken billing commands like:
- * - "2 buiscets and 3 milk packets"
- * - "2 Parle-G and 3 Amul Milk"
+ * - "add 1 oil packet to the bill"
+ * - "2 biscuits and 3 milk packets"
  * - "give bill" / "print receipt"
- * - "1 Maggi, 2 Coca Cola and give bill"
+ * 
+ * Accurately detects items that do NOT exist in the store inventory
+ * and generates appropriate voice feedback.
  */
 export function parseVoiceBillingCommand(
   rawSpeech: string,
-  products: Product[]
+  products: Product[],
+  language: string = 'en'
 ): VoiceBillingResult {
   const normalized = normalizeSpokenText(rawSpeech);
 
@@ -273,7 +297,7 @@ export function parseVoiceBillingCommand(
     'bill ready', 'print receipt', 'give receipt'
   ];
 
-  let shouldCompleteBill = billKeywords.some(keyword => normalized.includes(keyword));
+  const shouldCompleteBill = billKeywords.some(keyword => normalized.includes(keyword));
 
   // If the command is ONLY to give bill
   const isOnlyBillCommand = billKeywords.some(k => normalized.trim() === k || normalized.trim() === 'bill' || normalized.trim() === 'done');
@@ -300,9 +324,10 @@ export function parseVoiceBillingCommand(
     .filter(Boolean);
 
   const recognizedItems: VoiceBillingItem[] = [];
-  const unmatched: string[] = [];
+  const missingItems: string[] = [];
+  const outOfStockItems: { product: Product; requestedQty: number }[] = [];
 
-  // Helper to process an individual chunk like "2 biscuits" or "3 milk packets"
+  // Helper to process an individual chunk like "add 1 oil packet" or "2 biscuits"
   const processChunk = (chunk: string) => {
     if (!chunk.trim()) return;
 
@@ -317,20 +342,33 @@ export function parseVoiceBillingCommand(
       itemPhrase = chunk.replace(qtyMatch[0], ' ');
     }
 
+    const requestedName = extractRequestedItemName(itemPhrase);
     const cleanedQuery = cleanItemPhrase(itemPhrase);
-    if (!cleanedQuery) return;
 
-    const matchedProduct = matchProduct(cleanedQuery, products);
+    if (!requestedName && !cleanedQuery) return;
+
+    // Query inventory using cleaned token first, then requestedName
+    const matchedProduct = matchProductInInventory(cleanedQuery || requestedName, products) ||
+                           matchProductInInventory(requestedName, products);
+
     if (matchedProduct) {
-      // Check if we already recognized this product in the same command
-      const existing = recognizedItems.find(i => i.product.id === matchedProduct.id || i.product.name.toLowerCase() === matchedProduct.name.toLowerCase());
-      if (existing) {
-        existing.quantity += qty;
+      if (matchedProduct.stock <= 0) {
+        outOfStockItems.push({ product: matchedProduct, requestedQty: qty });
       } else {
-        recognizedItems.push({ product: matchedProduct, quantity: qty });
+        // Check if we already recognized this product in the same command
+        const existing = recognizedItems.find(i => i.product.id === matchedProduct.id || i.product.name.toLowerCase() === matchedProduct.name.toLowerCase());
+        if (existing) {
+          existing.quantity += qty;
+        } else {
+          recognizedItems.push({ product: matchedProduct, quantity: qty });
+        }
       }
     } else {
-      unmatched.push(cleanedQuery);
+      // Product NOT in inventory!
+      const missingName = requestedName || cleanedQuery || 'product';
+      if (!missingItems.includes(missingName)) {
+        missingItems.push(missingName);
+      }
     }
   };
 
@@ -349,6 +387,7 @@ export function parseVoiceBillingCommand(
     }
   }
 
+  // CASE 1: No products were added to cart
   if (recognizedItems.length === 0) {
     if (shouldCompleteBill) {
       return {
@@ -356,21 +395,80 @@ export function parseVoiceBillingCommand(
         items: [],
         shouldCompleteBill: true,
         feedback: 'Generating bill for current cart items...',
-        unmatchedTerms: unmatched
+        unmatchedTerms: missingItems
       };
     }
+
+    // 1A: Products requested do not exist in inventory
+    if (missingItems.length > 0) {
+      let feedback = '';
+      if (missingItems.length === 1) {
+        const item = missingItems[0];
+        const isPlural = item.endsWith('s');
+        const verb = isPlural ? 'are no' : 'is no';
+        if (language === 'te' || language === 'te-IN') {
+          feedback = `ఇన్వెంటరీలో ${item} లేదు.`;
+        } else if (language === 'hi' || language === 'hi-IN') {
+          feedback = `इन्वेंटरी में कोई ${item} नहीं है।`;
+        } else if (language === 'kn' || language === 'kn-IN') {
+          feedback = `ಇನ್ವೆಂಟರಿಯಲ್ಲಿ ${item} ಇಲ್ಲ.`;
+        } else {
+          feedback = `There ${verb} ${item} in the inventory.`;
+        }
+      } else {
+        const itemsList = missingItems.join(' or ');
+        feedback = `There is no ${itemsList} in the inventory.`;
+      }
+
+      return {
+        action: 'NO_ITEMS_FOUND',
+        items: [],
+        shouldCompleteBill: false,
+        feedback,
+        unmatchedTerms: missingItems
+      };
+    }
+
+    // 1B: Product is in inventory, but stock is 0
+    if (outOfStockItems.length > 0) {
+      const names = outOfStockItems.map(i => i.product.name).join(', ');
+      const feedback = `${names} is currently out of stock in the inventory.`;
+      return {
+        action: 'OUT_OF_STOCK',
+        items: [],
+        shouldCompleteBill: false,
+        feedback,
+        unmatchedTerms: [],
+        outOfStockTerms: outOfStockItems.map(i => i.product.name)
+      };
+    }
+
     return {
       action: 'NOT_UNDERSTOOD',
       items: [],
       shouldCompleteBill: false,
-      feedback: `Could not identify product from "${rawSpeech}". Try saying e.g. "2 biscuits and 3 milk packets".`,
-      unmatchedTerms: unmatched
+      feedback: `Could not find that product in the inventory. Try saying e.g. "2 biscuits and 3 milk packets".`,
+      unmatchedTerms: []
     };
   }
 
-  // Format confirmation feedback
+  // CASE 2: Some or all products were found and recognized
   const itemsSummary = recognizedItems.map(i => `${i.quantity}x ${i.product.name}`).join(', ');
   let feedback = `Added ${itemsSummary} to bill.`;
+
+  // Append note if any requested items were not found in inventory
+  if (missingItems.length > 0) {
+    const missingSummary = missingItems.join(', ');
+    const verb = missingItems.length === 1 && !missingItems[0].endsWith('s') ? 'is no' : 'are no';
+    feedback += ` Note: There ${verb} ${missingSummary} in the inventory.`;
+  }
+
+  // Append note if any requested items were out of stock
+  if (outOfStockItems.length > 0) {
+    const oosSummary = outOfStockItems.map(i => i.product.name).join(', ');
+    feedback += ` Note: ${oosSummary} is currently out of stock.`;
+  }
+
   if (shouldCompleteBill) {
     feedback += ` Generating bill now!`;
   }
@@ -380,6 +478,7 @@ export function parseVoiceBillingCommand(
     items: recognizedItems,
     shouldCompleteBill,
     feedback,
-    unmatchedTerms: unmatched
+    unmatchedTerms: missingItems,
+    outOfStockTerms: outOfStockItems.map(i => i.product.name)
   };
 }

@@ -100,6 +100,10 @@ export function processQuery(
         text: tr(language, 'ai_addConfirm', { name: product.name, qty, current: product.stock, new: product.stock + qty }),
         action,
       };
+    } else if (!product && qty > 0) {
+      return {
+        text: tr(language, 'ai_noProduct', { name: productQuery }),
+      };
     }
   }
 
@@ -125,6 +129,10 @@ export function processQuery(
       return {
         text: tr(language, 'ai_removeConfirm', { name: product.name, qty, current: product.stock, new: product.stock - qty }),
         action,
+      };
+    } else if (!product && qty > 0) {
+      return {
+        text: tr(language, 'ai_noProduct', { name: productQuery }),
       };
     }
   }
