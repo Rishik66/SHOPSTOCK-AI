@@ -6,6 +6,9 @@ const STORAGE_KEYS = {
   ENABLED: 'ss_supabase_enabled'
 };
 
+const DEFAULT_URL = 'https://oogfzscsmcnkguhstuko.supabase.co';
+const DEFAULT_KEY = 'sb_publishable__PCLFwRpI0pGJ2NRSzzIyQ_vDPHgMGp';
+
 export function getSupabaseConfig(): { url: string; key: string } {
   const envUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
   const envKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
@@ -17,8 +20,8 @@ export function getSupabaseConfig(): { url: string; key: string } {
     localKey = (localStorage.getItem(STORAGE_KEYS.ANON_KEY) || '').trim();
   } catch {}
 
-  const url = localUrl || envUrl;
-  const key = localKey || envKey;
+  const url = localUrl || envUrl || DEFAULT_URL;
+  const key = localKey || envKey || DEFAULT_KEY;
 
   return { url, key };
 }
