@@ -39,6 +39,21 @@ function getBestSellers(transactions: Transaction[]): { name: string; qty: numbe
   return Object.values(map).sort((a, b) => b.qty - a.qty).slice(0, 5);
 }
 
+function getLeastSellers(products: Product[], transactions: Transaction[]): { name: string; qty: number }[] {
+  if (transactions.length === 0) return [];
+  const map: Record<string, { name: string; qty: number }> = {};
+  products.forEach(p => {
+    map[p.id] = { name: p.name, qty: 0 };
+  });
+  transactions.forEach(t => {
+    t.items.forEach(item => {
+      if (!map[item.productId]) map[item.productId] = { name: item.productName, qty: 0 };
+      map[item.productId].qty += item.quantity;
+    });
+  });
+  return Object.values(map).sort((a, b) => a.qty - b.qty).slice(0, 5);
+}
+
 export function processQuery(
   query: string,
   products: Product[],
@@ -138,6 +153,14 @@ export function processQuery(
     if (sellers.length === 0) return { text: tr(language, 'ai_noSalesData') };
     const list = sellers.map((s, i) => `${i + 1}. ${s.name} — ${s.qty} units`).join('\n');
     return { text: `${tr(language, 'ai_bestSellers')}\n${list}` };
+  }
+
+  // LEAST_SELLERS
+  if (q.includes('least') || q.includes('slow') || q.includes('worst') || q.includes('kam bikne') || q.includes('takkuva ammudav') || q.includes('kadime maratav')) {
+    const least = getLeastSellers(products, transactions);
+    if (least.length === 0) return { text: tr(language, 'noLeastSelling') };
+    const list = least.map((s, i) => `${i + 1}. ${s.name} — ${s.qty} units`).join('\n');
+    return { text: `${tr(language, 'leastSelling')}:\n${list}` };
   }
 
   // LOW_STOCK

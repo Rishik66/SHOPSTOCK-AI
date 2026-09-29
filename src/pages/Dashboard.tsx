@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import { tr } from '../i18n';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { 
-  TrendingUp, Package, AlertTriangle, ShoppingCart, Bot, RefreshCw, 
+  TrendingUp, TrendingDown, Package, AlertTriangle, ShoppingCart, Bot, RefreshCw, 
   Camera, Plus, Star, X, Search, CheckCircle2, ArrowRight, DollarSign,
   Receipt, Clock, Percent, ArrowUpRight
 } from 'lucide-react';
@@ -15,7 +15,7 @@ export function Dashboard() {
   const [modalSearch, setModalSearch] = useState('');
   const [salesViewTab, setSalesViewTab] = useState<'products' | 'invoices'>('products');
 
-  const { todaySales, todayProfit, lowStockCount, chartData, bestSellers, recentSales } = useMemo(() => {
+  const { todaySales, todayProfit, lowStockCount, chartData, bestSellers, leastSellers, recentSales } = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
     let tSales = 0, tProfit = 0;
     
@@ -55,11 +55,50 @@ export function Dashboard() {
       return { day: dayStr, sales };
     });
 
-    const bSellers = Object.values(sellerMap).sort((a, b) => b.qty - a.qty).slice(0, 5);
+    // CRITICAL: For freshers who signed up for the first time (transactions.length === 0),
+    // both bestSellers and leastSellers sections MUST BE EMPTY!
+    let bSellers: { name: string; qty: number }[] = [];
+    let lSellers: { name: string; qty: number }[] = [];
+
+    if (transactions.length > 0) {
+      // Best sellers: items with highest sales volume
+      bSellers = Object.values(sellerMap).sort((a, b) => b.qty - a.qty).slice(0, 5);
+
+      // Least sellers: slow-moving products (lowest sales volume)
+      const allProductSalesMap: Record<string, { name: string; qty: number }> = {};
+
+      // Initialize with all current inventory products
+      products.forEach(p => {
+        allProductSalesMap[p.id] = { name: p.name, qty: 0 };
+      });
+
+      // Aggregate total units sold across all transactions
+      transactions.forEach(t => {
+        t.items.forEach(item => {
+          if (!allProductSalesMap[item.productId]) {
+            allProductSalesMap[item.productId] = { name: item.productName, qty: 0 };
+          }
+          allProductSalesMap[item.productId].qty += item.quantity;
+        });
+      });
+
+      // Sort ascending (least units sold first)
+      lSellers = Object.values(allProductSalesMap)
+        .sort((a, b) => a.qty - b.qty)
+        .slice(0, 5);
+    }
     
     rSales.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-    return { todaySales: tSales, todayProfit: tProfit, lowStockCount: lCount, chartData: cData, bestSellers: bSellers, recentSales: rSales.slice(0, 5) };
+    return { 
+      todaySales: tSales, 
+      todayProfit: tProfit, 
+      lowStockCount: lCount, 
+      chartData: cData, 
+      bestSellers: bSellers, 
+      leastSellers: lSellers,
+      recentSales: rSales.slice(0, 5) 
+    };
   }, [products, transactions]);
 
   // Today's date string
@@ -291,10 +330,13 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* Charts & Lists Section */}
+      {/* Charts & Activity Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white p-5 rounded-xl shadow-sm border border-gray-100">
-          <h2 className="text-lg font-semibold mb-4">{tr(language, 'salesChart')}</h2>
+        <div className="lg:col-span-2 bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-gray-900">{tr(language, 'salesChart')}</h2>
+            <span className="text-xs text-gray-500 font-medium">Last 7 Days</span>
+          </div>
           <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData}>
@@ -308,38 +350,123 @@ export function Dashboard() {
           </div>
         </div>
 
-        <div className="space-y-6">
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
-            <h2 className="text-lg font-semibold mb-4">{tr(language, 'bestSelling')}</h2>
+        {/* Recent Sales Activity */}
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex flex-col">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-gray-900">{tr(language, 'recentSales')}</h2>
+            <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full font-bold">Today</span>
+          </div>
+          {recentSales.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center py-6 text-center text-gray-400 space-y-1">
+              <ShoppingCart size={28} className="mx-auto text-gray-300 mb-1" />
+              <p className="text-sm font-bold text-gray-600">{tr(language, 'noRecentSales')}</p>
+              <p className="text-xs text-gray-400">Completed sales from Billing will appear here in real-time.</p>
+            </div>
+          ) : (
+            <ul className="space-y-3 overflow-y-auto max-h-72 pr-1">
+              {recentSales.map(t => (
+                <li key={t.id} className="text-sm p-3 rounded-xl bg-slate-50 border border-slate-100 hover:bg-blue-50/40 transition-colors">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="font-black text-gray-900">₹{t.total}</span>
+                    <span className="text-xs text-gray-500 font-mono">{new Date(t.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  </div>
+                  <div className="text-gray-600 text-xs truncate">
+                    {t.items.map((i: any) => `${i.quantity}x ${i.productName}`).join(', ')}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+
+      {/* Row 2: Product Performance Insights (Best Sellers & Least Sellers) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* 🔥 Best Selling Products */}
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-emerald-50 text-emerald-600">
+                  <TrendingUp size={20} />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-gray-900">{tr(language, 'bestSelling')}</h2>
+                  <p className="text-xs text-gray-500">Top moving items in your store</p>
+                </div>
+              </div>
+              <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                High Demand
+              </span>
+            </div>
+
             {bestSellers.length === 0 ? (
-              <p className="text-sm text-gray-500">{tr(language, 'noSalesData')}</p>
+              <div className="py-8 text-center text-gray-400 space-y-1.5 border border-dashed border-gray-200 rounded-xl bg-slate-50/50">
+                <TrendingUp size={28} className="mx-auto text-gray-300" />
+                <p className="text-sm font-bold text-gray-600">{tr(language, 'noSalesData')}</p>
+                <p className="text-xs text-gray-400 max-w-xs mx-auto">
+                  Start selling products in the Billing section to view your best-performing inventory here.
+                </p>
+              </div>
             ) : (
-              <ul className="space-y-3">
+              <ul className="space-y-2.5">
                 {bestSellers.map((s, i) => (
-                  <li key={i} className="flex justify-between items-center text-sm">
-                    <span className="text-gray-700 font-medium">{i + 1}. {s.name}</span>
-                    <span className="text-gray-500 bg-gray-100 px-2 py-1 rounded-md">{s.qty} {tr(language, 'sold')}</span>
+                  <li key={i} className="flex justify-between items-center text-sm p-2.5 rounded-xl bg-slate-50/80 border border-slate-100 hover:bg-emerald-50/40 transition-colors">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-800 font-black text-xs flex items-center justify-center shrink-0">
+                        {i + 1}
+                      </span>
+                      <span className="text-gray-900 font-bold truncate">{s.name}</span>
+                    </div>
+                    <span className="text-emerald-700 font-black text-xs bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg shrink-0">
+                      {s.qty} {tr(language, 'sold')}
+                    </span>
                   </li>
                 ))}
               </ul>
             )}
           </div>
+        </div>
 
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
-            <h2 className="text-lg font-semibold mb-4">{tr(language, 'recentSales')}</h2>
-            {recentSales.length === 0 ? (
-              <p className="text-sm text-gray-500">{tr(language, 'noRecentSales')}</p>
+        {/* 📉 Least Selling Products */}
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-amber-50 text-amber-600">
+                  <TrendingDown size={20} />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-gray-900">{tr(language, 'leastSelling')}</h2>
+                  <p className="text-xs text-gray-500">Slow-moving products that need attention</p>
+                </div>
+              </div>
+              <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full">
+                Slow Moving
+              </span>
+            </div>
+
+            {leastSellers.length === 0 ? (
+              <div className="py-8 text-center text-gray-400 space-y-1.5 border border-dashed border-gray-200 rounded-xl bg-slate-50/50">
+                <TrendingDown size={28} className="mx-auto text-gray-300" />
+                <p className="text-sm font-bold text-gray-600">{tr(language, 'noLeastSelling')}</p>
+                <p className="text-xs text-gray-400 max-w-xs mx-auto">
+                  Start selling products in the Billing section to identify slow-moving items that may need discounts.
+                </p>
+              </div>
             ) : (
-              <ul className="space-y-4">
-                {recentSales.map(t => (
-                  <li key={t.id} className="text-sm">
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="font-medium text-gray-800">₹{t.total}</span>
-                      <span className="text-xs text-gray-500">{new Date(t.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+              <ul className="space-y-2.5">
+                {leastSellers.map((s, i) => (
+                  <li key={i} className="flex justify-between items-center text-sm p-2.5 rounded-xl bg-slate-50/80 border border-slate-100 hover:bg-amber-50/40 transition-colors">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="w-6 h-6 rounded-full bg-amber-100 text-amber-800 font-black text-xs flex items-center justify-center shrink-0">
+                        {i + 1}
+                      </span>
+                      <span className="text-gray-900 font-bold truncate">{s.name}</span>
                     </div>
-                    <div className="text-gray-500 text-xs truncate">
-                      {t.items.map((i: any) => `${i.quantity}x ${i.productName}`).join(', ')}
-                    </div>
+                    <span className="text-amber-800 font-black text-xs bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg shrink-0">
+                      {s.qty} {tr(language, 'sold')}
+                    </span>
                   </li>
                 ))}
               </ul>
