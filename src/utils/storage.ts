@@ -39,6 +39,7 @@ function removeCookie(name: string): void {
 export const DEMO_USER: UserAccount = {
   id: 'demo_ravi',
   email: 'demo@shopstock.ai',
+  phone: '9876543210',
   password: 'demo',
   shopName: 'Ravi General Store',
   ownerName: 'Ravi Kumar',
@@ -126,6 +127,12 @@ export function saveRegisteredUsers(users: UserAccount[]): void {
         if (u.email) {
           localStorage.setItem(`ss_user_email_${u.email.toLowerCase().trim()}`, JSON.stringify(u));
         }
+        if (u.phone) {
+          const digits = u.phone.replace(/\D/g, '');
+          if (digits.length >= 10) {
+            localStorage.setItem(`ss_user_phone_${digits.slice(-10)}`, JSON.stringify(u));
+          }
+        }
         if (u.ownerName) {
           localStorage.setItem(`ss_user_owner_${u.ownerName.toLowerCase().trim()}`, JSON.stringify(u));
         }
@@ -140,10 +147,13 @@ export function findUserDirectly(identifier: string): UserAccount | null {
   const clean = identifier.toLowerCase().trim();
   if (!clean) return null;
 
-  // 1. Check all registered users
+  const cleanDigits = clean.replace(/\D/g, '');
+
+  // 1. Check all registered users (matching email, phone, ownerName, or shopName)
   const list = getRegisteredUsers();
   const directMatch = list.find(u => 
     (u.email && u.email.toLowerCase().trim() === clean) ||
+    (cleanDigits.length >= 10 && u.phone && u.phone.replace(/\D/g, '').endsWith(cleanDigits.slice(-10))) ||
     (u.ownerName && u.ownerName.toLowerCase().trim() === clean) ||
     (u.shopName && u.shopName.toLowerCase().trim() === clean)
   );
@@ -158,7 +168,18 @@ export function findUserDirectly(identifier: string): UserAccount | null {
     }
   } catch {}
 
-  // 3. Check individual owner storage
+  // 3. Check individual phone storage
+  if (cleanDigits.length >= 10) {
+    try {
+      const rawPhone = localStorage.getItem(`ss_user_phone_${cleanDigits.slice(-10)}`);
+      if (rawPhone) {
+        const u = JSON.parse(rawPhone);
+        if (u && u.id) return u;
+      }
+    } catch {}
+  }
+
+  // 4. Check individual owner storage
   try {
     const rawOwner = localStorage.getItem(`ss_user_owner_${clean}`);
     if (rawOwner) {
@@ -167,10 +188,11 @@ export function findUserDirectly(identifier: string): UserAccount | null {
     }
   } catch {}
 
-  // 4. Partial search
+  // 5. Partial search
   if (clean.length >= 3) {
     const partialMatch = list.find(u => 
       (u.email && u.email.toLowerCase().includes(clean)) ||
+      (cleanDigits.length >= 10 && u.phone && u.phone.includes(cleanDigits)) ||
       (u.ownerName && u.ownerName.toLowerCase().includes(clean)) ||
       (u.shopName && u.shopName.toLowerCase().includes(clean))
     );

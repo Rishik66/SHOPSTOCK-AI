@@ -17,10 +17,11 @@ import {
   loadLanguage,
   saveLanguage as storageSaveLanguage,
 } from '../utils/storage';
-import { isSupabaseConfigured } from '../services/supabaseClient';
+import { isSupabaseConfigured, getSupabaseClient } from '../services/supabaseClient';
 import {
   syncSignUpToSupabase,
   syncSignInWithSupabase,
+  syncUpdatePasswordInSupabase,
   fetchProductsFromSupabase,
   saveProductsToSupabase,
   fetchTransactionsFromSupabase,
@@ -62,6 +63,8 @@ interface AppContextType {
   resetDemoData: () => void;
   login: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
   signup: (data: Omit<UserAccount, 'id' | 'createdAt'>) => Promise<{ success: boolean; error?: string }>;
+  resetPassword: (userId: string, newPass: string) => Promise<{ success: boolean; error?: string }>;
+  findUserAccount: (identifier: string) => Promise<UserAccount | null>;
   loginDemo: () => void;
   logout: () => void;
   refreshCloudSync: () => Promise<void>;
@@ -286,20 +289,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signup = async (data: Omit<UserAccount, 'id' | 'createdAt'>): Promise<{ success: boolean; error?: string }> => {
-    const cleanEmail = data.email.trim().toLowerCase();
+    const cleanEmail = data.email ? data.email.trim().toLowerCase() : '';
+    const cleanPhone = data.phone ? data.phone.replace(/\D/g, '') : '';
     const cleanOwner = data.ownerName.trim();
     const cleanShop = data.shopName.trim();
     const users = getRegisteredUsers();
 
-    if (users.some(u => u.email && u.email.toLowerCase() === cleanEmail && u.id !== DEMO_USER.id)) {
+    if (cleanEmail && users.some(u => u.email && u.email.toLowerCase() === cleanEmail && u.id !== DEMO_USER.id)) {
       return { success: false, error: 'An account with this email already exists. Please sign in.' };
+    }
+
+    if (cleanPhone && cleanPhone.length >= 10) {
+      if (users.some(u => u.phone && u.phone.replace(/\D/g, '').endsWith(cleanPhone.slice(-10)) && u.id !== DEMO_USER.id)) {
+        return { success: false, error: 'An account with this mobile number already exists. Please sign in.' };
+      }
     }
 
     const newUser: UserAccount = {
       ...data,
       shopName: cleanShop,
       ownerName: cleanOwner,
-      email: cleanEmail,
+      email: cleanEmail || `${cleanPhone}@mobile.shopstock.ai`,
+      phone: cleanPhone ? cleanPhone.slice(-10) : undefined,
       id: 'usr_' + Date.now().toString() + Math.random().toString(36).slice(2, 7),
       createdAt: new Date().toISOString()
     };
@@ -318,6 +329,83 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     setCurrentPage('dashboard');
+    return { success: true };
+  };
+
+  const findUserAccount = async (identifier: string): Promise<UserAccount | null> => {
+    const clean = identifier.trim();
+    if (!clean) return null;
+
+    // 1. Direct local lookup
+    const local = findUserDirectly(clean);
+    if (local) return local;
+
+    // 2. Cloud lookup in Supabase
+    if (isSupabaseConfigured()) {
+      try {
+        const client = getSupabaseClient();
+        if (client) {
+          const cleanDigits = clean.replace(/\D/g, '');
+          let query = client.from('shop_users').select('*');
+          if (cleanDigits.length >= 10) {
+            query = query.or(`phone.eq.${cleanDigits.slice(-10)},email.eq.${clean.toLowerCase()}`);
+          } else {
+            query = query.or(`email.eq.${clean.toLowerCase()},owner_name.ilike.${clean},shop_name.ilike.${clean}`);
+          }
+          const { data } = await query.maybeSingle();
+          if (data) {
+            return {
+              id: data.id,
+              email: data.email,
+              phone: data.phone || undefined,
+              password: data.password,
+              shopName: data.shop_name,
+              ownerName: data.owner_name,
+              category: data.category || 'General Store',
+              createdAt: data.created_at
+            };
+          }
+        }
+      } catch (err) {
+        console.warn("Supabase findUserAccount notice:", err);
+      }
+    }
+
+    return null;
+  };
+
+  const resetPassword = async (
+    userId: string, 
+    newPass: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!newPass || newPass.length < 4) {
+      return { success: false, error: 'Password must be at least 4 characters long.' };
+    }
+
+    const users = getRegisteredUsers();
+    const idx = users.findIndex(u => u.id === userId);
+    let targetUser: UserAccount | null = null;
+
+    if (idx >= 0) {
+      targetUser = {
+        ...users[idx],
+        password: newPass
+      };
+      const updatedUsers = [...users];
+      updatedUsers[idx] = targetUser;
+      saveRegisteredUsers(updatedUsers);
+
+      if (currentUser?.id === userId) {
+        setCurrentUser(targetUser);
+        setCurrentUserState(targetUser);
+      }
+    }
+
+    // Sync to Supabase cloud
+    if (isSupabaseConfigured() && userId !== DEMO_USER.id) {
+      await syncUpdatePasswordInSupabase(userId, newPass).catch(() => {});
+    }
+
     return { success: true };
   };
 
@@ -446,7 +534,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       syncNow,
       refreshCloudSync,
       resetDemoData,
-      login, signup, loginDemo, logout
+      login, signup, loginDemo, logout,
+      findUserAccount, resetPassword
     }}>
       {children}
     </AppContext.Provider>

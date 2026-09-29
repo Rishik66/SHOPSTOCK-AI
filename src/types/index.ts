@@ -14,6 +14,7 @@ export interface ReviewItem {
 export interface UserAccount {
   id: string;
   email: string;
+  phone?: string;
   password: string;
   shopName: string;
   ownerName: string;

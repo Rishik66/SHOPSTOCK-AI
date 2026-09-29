@@ -15,15 +15,20 @@ export async function syncSignUpToSupabase(user: UserAccount): Promise<boolean> 
   if (!client) return false;
 
   try {
-    const { error } = await client.from('shop_users').upsert({
+    const userPayload: any = {
       id: user.id,
-      email: user.email.toLowerCase().trim(),
+      email: user.email ? user.email.toLowerCase().trim() : '',
       password: user.password,
       shop_name: user.shopName,
       owner_name: user.ownerName,
       category: user.category || 'General Store',
       created_at: user.createdAt || new Date().toISOString()
-    });
+    };
+    if (user.phone) {
+      userPayload.phone = user.phone.trim();
+    }
+
+    const { error } = await client.from('shop_users').upsert(userPayload);
 
     if (error) {
       console.warn("Supabase user signup sync notice:", error.message);
@@ -37,7 +42,7 @@ export async function syncSignUpToSupabase(user: UserAccount): Promise<boolean> 
 }
 
 /**
- * Checks credentials in Supabase when logging in (allows login across multiple devices)
+ * Checks credentials in Supabase when logging in (allows login across multiple devices via phone, email, or name)
  */
 export async function syncSignInWithSupabase(
   identifier: string,
@@ -47,19 +52,32 @@ export async function syncSignInWithSupabase(
   if (!client) return { success: false, notFound: true };
 
   const clean = identifier.toLowerCase().trim();
+  const cleanDigits = clean.replace(/\D/g, '');
 
   try {
+    let matchedUser: any = null;
+
     // 1. Look up by email
-    const { data: emailData, error: emailError } = await client
+    const { data: emailData } = await client
       .from('shop_users')
       .select('*')
       .eq('email', clean)
       .maybeSingle();
 
-    let matchedUser = emailData;
+    if (emailData) matchedUser = emailData;
 
-    // 2. If not found by email, check owner_name or shop_name
-    if (!matchedUser && !emailError) {
+    // 2. Look up by phone if 10+ digits
+    if (!matchedUser && cleanDigits.length >= 10) {
+      const { data: phoneData } = await client
+        .from('shop_users')
+        .select('*')
+        .eq('phone', cleanDigits.slice(-10))
+        .maybeSingle();
+      if (phoneData) matchedUser = phoneData;
+    }
+
+    // 3. If not found by email/phone, check owner_name or shop_name
+    if (!matchedUser) {
       const { data: nameData } = await client
         .from('shop_users')
         .select('*')
@@ -82,6 +100,7 @@ export async function syncSignInWithSupabase(
     const user: UserAccount = {
       id: matchedUser.id,
       email: matchedUser.email,
+      phone: matchedUser.phone || undefined,
       password: matchedUser.password,
       shopName: matchedUser.shop_name,
       ownerName: matchedUser.owner_name,
@@ -93,6 +112,24 @@ export async function syncSignInWithSupabase(
   } catch (err: any) {
     console.warn("Supabase login check error:", err);
     return { success: false, notFound: true, error: err?.message };
+  }
+}
+
+/**
+ * Updates user password in Supabase
+ */
+export async function syncUpdatePasswordInSupabase(userId: string, newPassword: string): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+  try {
+    const { error } = await client
+      .from('shop_users')
+      .update({ password: newPassword })
+      .eq('id', userId);
+    return !error;
+  } catch (err) {
+    console.warn("Supabase password update error:", err);
+    return false;
   }
 }
 
