@@ -4,6 +4,7 @@ import {
   getEmailJsConfig, 
   saveEmailJsConfig, 
   DEFAULT_EMAILJS_PUBLIC_KEY, 
+  DEFAULT_EMAILJS_SERVICE_ID,
   isEmailJsReady 
 } from '../services/emailService';
 import { 
@@ -23,7 +24,7 @@ export function OtpGatewayModal({ isOpen, onClose, onSaved }: Props) {
 
   // EmailJS fields
   const [publicKey, setPublicKey] = useState(DEFAULT_EMAILJS_PUBLIC_KEY);
-  const [serviceId, setServiceId] = useState('');
+  const [serviceId, setServiceId] = useState(DEFAULT_EMAILJS_SERVICE_ID);
   const [templateId, setTemplateId] = useState('');
 
   // SMS fields
@@ -39,7 +40,7 @@ export function OtpGatewayModal({ isOpen, onClose, onSaved }: Props) {
     if (isOpen) {
       const emailCfg = getEmailJsConfig();
       setPublicKey(emailCfg.publicKey || DEFAULT_EMAILJS_PUBLIC_KEY);
-      setServiceId(emailCfg.serviceId || '');
+      setServiceId(emailCfg.serviceId || DEFAULT_EMAILJS_SERVICE_ID);
       setTemplateId(emailCfg.templateId || '');
 
       const smsCfg = getSmsConfig();
