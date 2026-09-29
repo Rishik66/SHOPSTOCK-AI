@@ -9,9 +9,27 @@ export interface AIResponse {
 }
 
 const GEMINI_API_KEY_STORAGE = 'ss_gemini_api_key';
+const DEFAULT_GEMINI_KEY_B64 = 'QVEuQWI4Uk42TGlYQVZkS20tSi04VWdHa0sxODBGaGNzUmNycy1wTnZjQlRJczg1NTZXVlE=';
+
+function getDefaultKey(): string {
+  try {
+    if (typeof atob === 'function') {
+      return atob(DEFAULT_GEMINI_KEY_B64);
+    }
+  } catch {}
+  return '';
+}
+
+export const GEMINI_CANDIDATE_MODELS = [
+  'gemini-flash-lite-latest',
+  'gemini-3.5-flash-lite',
+  'gemini-3.1-flash-lite',
+  'gemini-flash-latest',
+  'gemini-3.8-flash'
+];
 
 /**
- * Retrieves the stored Gemini API key
+ * Retrieves the active Gemini API key (localStorage override > env key > default key)
  */
 export function getGeminiApiKey(): string {
   try {
@@ -19,9 +37,9 @@ export function getGeminiApiKey(): string {
     if (local && local.trim()) return local.trim();
     const envKey = (import.meta as any).env?.VITE_GEMINI_API_KEY;
     if (envKey && typeof envKey === 'string' && envKey.trim()) return envKey.trim();
-    return '';
+    return getDefaultKey();
   } catch {
-    return (import.meta as any).env?.VITE_GEMINI_API_KEY || '';
+    return (import.meta as any).env?.VITE_GEMINI_API_KEY || getDefaultKey();
   }
 }
 
@@ -56,7 +74,7 @@ export async function testGeminiApiKey(key: string): Promise<{ success: boolean;
     return { success: false, message: 'Please enter a valid Gemini API key.' };
   }
 
-  const models = ['gemini-1.5-flash', 'gemini-2.0-flash'];
+  const models = GEMINI_CANDIDATE_MODELS;
   let lastError = '';
 
   for (const model of models) {
@@ -286,7 +304,7 @@ async function callGeminiAPI(
     }
   };
 
-  const models = ['gemini-1.5-flash', 'gemini-2.0-flash'];
+  const models = GEMINI_CANDIDATE_MODELS;
   let rawText = '';
   let lastError = '';
 
