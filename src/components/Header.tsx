@@ -19,6 +19,7 @@ export function Header({ onMenuClick }: { onMenuClick: () => void }) {
       case 'smart-restock': return tr(language, 'nav_restock');
       case 'invoice-scanner': return tr(language, 'nav_invoice');
       case 'reviews': return tr(language, 'nav_reviews');
+      case 'settings': return tr(language, 'nav_settings');
       default: return '';
     }
   };

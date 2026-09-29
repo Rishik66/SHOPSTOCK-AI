@@ -272,3 +272,52 @@ export async function syncAllToSupabase(
     return { success: false, message: err?.message || 'Sync encountered an error.' };
   }
 }
+
+const AUTO_SYNC_KEY = 'ss_auto_sync_enabled';
+const LAST_SYNC_KEY = 'ss_last_sync_time';
+
+/**
+ * Checks whether automatic sync is enabled. Defaults to true.
+ */
+export function isAutoSyncEnabled(): boolean {
+  try {
+    const val = localStorage.getItem(AUTO_SYNC_KEY);
+    return val === null ? true : val === 'true';
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Sets the auto-sync preference in localStorage so it stays active across sessions
+ */
+export function setAutoSyncEnabled(enabled: boolean): void {
+  try {
+    localStorage.setItem(AUTO_SYNC_KEY, enabled ? 'true' : 'false');
+  } catch (e) {
+    console.warn('Failed to save auto sync setting', e);
+  }
+}
+
+/**
+ * Gets the timestamp string of the last successful sync
+ */
+export function getLastAutoSyncTime(): string | null {
+  try {
+    return localStorage.getItem(LAST_SYNC_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Updates the timestamp of the last successful sync
+ */
+export function setLastAutoSyncTime(timestamp: string): void {
+  try {
+    localStorage.setItem(LAST_SYNC_KEY, timestamp);
+  } catch (e) {
+    console.warn('Failed to save last sync time', e);
+  }
+}
+

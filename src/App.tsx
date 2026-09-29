@@ -8,6 +8,7 @@ import { AIAssistant } from './pages/AIAssistant';
 import { SmartRestock } from './pages/SmartRestock';
 import { InvoiceScanner } from './pages/InvoiceScanner';
 import { ReviewsPage } from './pages/ReviewsPage';
+import { Settings } from './pages/Settings';
 import { AuthPage } from './pages/AuthPage';
 
 function AppContent() {
@@ -40,6 +41,7 @@ function AppContent() {
       {currentPage === 'smart-restock' && <SmartRestock />}
       {currentPage === 'invoice-scanner' && <InvoiceScanner />}
       {currentPage === 'reviews' && <ReviewsPage />}
+      {currentPage === 'settings' && <Settings />}
     </Layout>
   );
 }

@@ -1,11 +1,11 @@
 import React from 'react';
-import { LayoutDashboard, Package, ShoppingCart, Bot, RefreshCw, Barcode, X, LogOut, Store, Star } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingCart, Bot, RefreshCw, Barcode, X, Store, Star, Settings, Cloud } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { tr } from '../i18n';
-import { Language, Page } from '../types';
+import { Page } from '../types';
 
 export function Sidebar({ onClose }: { onClose?: () => void }) {
-  const { currentPage, setCurrentPage, language, setLanguage, currentUser, logout } = useApp();
+  const { currentPage, setCurrentPage, language, currentUser, isCloudConnected, isOnline, autoSyncEnabled } = useApp();
 
   const navItems: { id: Page; icon: React.ElementType; label: string }[] = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'nav_dashboard' },
@@ -15,6 +15,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
     { id: 'smart-restock', icon: RefreshCw, label: 'nav_restock' },
     { id: 'invoice-scanner', icon: Barcode, label: 'nav_invoice' },
     { id: 'reviews', icon: Star, label: 'nav_reviews' },
+    { id: 'settings', icon: Settings, label: 'nav_settings' },
   ];
 
   return (
@@ -51,40 +52,35 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
             <button
               key={item.id}
               onClick={() => { setCurrentPage(item.id); onClose?.(); }}
-              className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md ${
-                isActive ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'
+              className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition-colors ${
+                isActive ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-700 hover:bg-gray-100'
               }`}
             >
-              <Icon size={20} />
-              {tr(language, item.label)}
+              <Icon size={19} className={isActive ? 'text-white' : 'text-gray-500'} />
+              <span>{tr(language, item.label)}</span>
             </button>
           );
         })}
       </nav>
-      <div className="p-4 border-t border-gray-200 space-y-4">
-        <div>
-          <select
-            value={language}
-            onChange={(e) => setLanguage(e.target.value as Language)}
-            className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 p-2.5"
-          >
-            <option value="en">🇺🇸 English</option>
-            <option value="te">🇮🇳 తెలుగు</option>
-            <option value="hi">🇮🇳 हिन्दी</option>
-            <option value="kn">🇮🇳 ಕನ್ನಡ</option>
-          </select>
-        </div>
-
+      
+      {/* Sidebar Footer: Quick status linking to Settings */}
+      <div className="p-4 border-t border-gray-200 bg-gray-50/50">
         <button
-          onClick={() => {
-            if (window.confirm("Are you sure you want to log out?")) {
-              logout();
-            }
-          }}
-          className="w-full flex items-center justify-center gap-2 text-sm text-gray-700 bg-gray-100 hover:bg-red-50 hover:text-red-700 p-2.5 rounded-lg font-semibold transition-colors"
+          onClick={() => { setCurrentPage('settings'); onClose?.(); }}
+          className="w-full flex items-center justify-between p-2.5 rounded-lg border border-gray-200 bg-white hover:border-blue-400 hover:bg-blue-50/30 transition-all text-left group"
         >
-          <LogOut size={16} />
-          <span>Log Out</span>
+          <div className="flex items-center gap-2">
+            <Cloud size={16} className={isCloudConnected && isOnline ? 'text-emerald-600' : 'text-amber-500'} />
+            <div className="flex flex-col">
+              <span className="text-[11px] font-bold text-gray-800 group-hover:text-blue-700">
+                {isCloudConnected ? (isOnline ? 'Supabase Synced' : 'Sync Paused (Offline)') : 'Cloud Database'}
+              </span>
+              <span className="text-[10px] text-gray-500">
+                {autoSyncEnabled ? 'Auto-sync active' : 'Manual sync'}
+              </span>
+            </div>
+          </div>
+          <Settings size={15} className="text-gray-400 group-hover:text-blue-600" />
         </button>
       </div>
     </div>

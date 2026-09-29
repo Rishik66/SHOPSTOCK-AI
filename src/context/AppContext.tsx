@@ -24,7 +24,12 @@ import {
   fetchProductsFromSupabase,
   saveProductsToSupabase,
   fetchTransactionsFromSupabase,
-  saveTransactionToSupabase
+  saveTransactionToSupabase,
+  syncAllToSupabase,
+  isAutoSyncEnabled,
+  setAutoSyncEnabled as saveAutoSyncEnabled,
+  getLastAutoSyncTime,
+  setLastAutoSyncTime
 } from '../services/supabaseSyncService';
 
 export { DEMO_USER };
@@ -45,10 +50,14 @@ interface AppContextType {
   currentPage: Page;
   ready: boolean;
   isCloudConnected: boolean;
+  autoSyncEnabled: boolean;
+  isOnline: boolean;
+  lastSyncTime: string | null;
   setProducts: (products: Product[]) => void;
   setTransactions: (transactions: Transaction[]) => void;
   setLanguage: (lang: Language) => void;
   setCurrentPage: (page: Page) => void;
+  setAutoSyncEnabled: (enabled: boolean) => void;
   addNotification: (notification: Omit<AppNotification, 'id' | 'timestamp'>) => void;
   resetDemoData: () => void;
   login: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
@@ -56,6 +65,7 @@ interface AppContextType {
   loginDemo: () => void;
   logout: () => void;
   refreshCloudSync: () => Promise<void>;
+  syncNow: () => Promise<{ success: boolean; message: string }>;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -75,6 +85,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [ready, setReady] = useState(false);
   const [isCloudConnected, setIsCloudConnected] = useState(false);
+  const [autoSyncEnabled, setAutoSyncEnabledState] = useState<boolean>(isAutoSyncEnabled());
+  const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(getLastAutoSyncTime());
 
   // Initialize or switch store data based on active user
   const loadUserData = (user: UserAccount | null) => {
@@ -127,6 +140,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               saveProductsToSupabase(userId, local);
             }
           }
+          const now = new Date().toISOString();
+          setLastSyncTime(now);
+          setLastAutoSyncTime(now);
         }
       }).catch(err => console.warn('Supabase product sync background notice:', err));
 
@@ -141,6 +157,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               local.forEach(tx => saveTransactionToSupabase(userId, tx));
             }
           }
+          const now = new Date().toISOString();
+          setLastSyncTime(now);
+          setLastAutoSyncTime(now);
         }
       }).catch(err => console.warn('Supabase tx sync background notice:', err));
     } else {
@@ -167,7 +186,44 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       loadUserData(savedUser);
     }
 
+    // 5. Network online / offline event listeners for automatic silent sync
+    const handleOnline = () => {
+      setIsOnline(true);
+      if (isAutoSyncEnabled()) {
+        const user = getCurrentUser();
+        if (user && user.id !== DEMO_USER.id && isSupabaseConfigured()) {
+          const prods = loadUserProducts(user.id);
+          const txns = loadUserTransactions(user.id);
+          syncAllToSupabase(user, prods, txns).then(res => {
+            if (res.success) {
+              const now = new Date().toISOString();
+              setLastSyncTime(now);
+              setLastAutoSyncTime(now);
+              setNotifications(prev => [{
+                id: Date.now().toString() + Math.random().toString(36).slice(2),
+                type: 'info' as const,
+                message: 'Internet restored: Automatically synced store data to Supabase.',
+                timestamp: now
+              }, ...prev].slice(0, 20));
+            }
+          }).catch(err => console.warn('Network auto-sync error:', err));
+        }
+      }
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
     setReady(true);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, []);
 
   const refreshCloudSync = async () => {
@@ -280,12 +336,58 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setCurrentPage('dashboard');
   };
 
+  const setAutoSyncEnabled = (enabled: boolean) => {
+    setAutoSyncEnabledState(enabled);
+    saveAutoSyncEnabled(enabled);
+    if (enabled && currentUser && currentUser.id !== DEMO_USER.id && isSupabaseConfigured() && (typeof navigator === 'undefined' || navigator.onLine)) {
+      syncAllToSupabase(currentUser, products, transactions).then(res => {
+        if (res.success) {
+          const now = new Date().toISOString();
+          setLastSyncTime(now);
+          setLastAutoSyncTime(now);
+          addNotification({
+            type: 'success',
+            message: 'Auto-sync activated! Synchronized store data with Supabase Cloud.'
+          });
+        }
+      }).catch(err => console.warn('Initial auto-sync notice:', err));
+    }
+  };
+
+  const syncNow = async (): Promise<{ success: boolean; message: string }> => {
+    if (!currentUser) return { success: false, message: 'Please sign in first.' };
+    if (!isSupabaseConfigured()) return { success: false, message: 'Supabase is not configured yet. Please configure Supabase URL & Key.' };
+
+    const res = await syncAllToSupabase(currentUser, products, transactions);
+    if (res.success) {
+      const now = new Date().toISOString();
+      setLastSyncTime(now);
+      setLastAutoSyncTime(now);
+      addNotification({
+        type: 'success',
+        message: 'Successfully synchronized data to Supabase Cloud!'
+      });
+    } else {
+      addNotification({
+        type: 'error',
+        message: res.message || 'Sync encountered an error.'
+      });
+    }
+    return res;
+  };
+
   const setProducts = (p: Product[]) => {
     setProductsState(p);
     if (currentUser) {
       saveUserProducts(currentUser.id, p);
-      if (isSupabaseConfigured() && currentUser.id !== DEMO_USER.id) {
-        saveProductsToSupabase(currentUser.id, p).catch(err => console.warn('Supabase product sync error:', err));
+      if (isSupabaseConfigured() && currentUser.id !== DEMO_USER.id && autoSyncEnabled && (typeof navigator === 'undefined' || navigator.onLine)) {
+        saveProductsToSupabase(currentUser.id, p).then(ok => {
+          if (ok) {
+            const now = new Date().toISOString();
+            setLastSyncTime(now);
+            setLastAutoSyncTime(now);
+          }
+        }).catch(err => console.warn('Supabase product sync error:', err));
       }
     }
   };
@@ -294,8 +396,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setTransactionsState(t);
     if (currentUser) {
       saveUserTransactions(currentUser.id, t);
-      if (isSupabaseConfigured() && currentUser.id !== DEMO_USER.id && t.length > 0) {
-        saveTransactionToSupabase(currentUser.id, t[0]).catch(err => console.warn('Supabase transaction sync error:', err));
+      if (isSupabaseConfigured() && currentUser.id !== DEMO_USER.id && autoSyncEnabled && (typeof navigator === 'undefined' || navigator.onLine) && t.length > 0) {
+        saveTransactionToSupabase(currentUser.id, t[0]).then(ok => {
+          if (ok) {
+            const now = new Date().toISOString();
+            setLastSyncTime(now);
+            setLastAutoSyncTime(now);
+          }
+        }).catch(err => console.warn('Supabase transaction sync error:', err));
       }
     }
   };
@@ -331,6 +439,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       currentPage, setCurrentPage,
       ready,
       isCloudConnected,
+      autoSyncEnabled,
+      setAutoSyncEnabled,
+      isOnline,
+      lastSyncTime,
+      syncNow,
       refreshCloudSync,
       resetDemoData,
       login, signup, loginDemo, logout

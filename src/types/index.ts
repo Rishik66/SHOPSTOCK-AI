@@ -1,5 +1,5 @@
 export type Language = 'en' | 'te' | 'hi' | 'kn';
-export type Page = 'dashboard' | 'inventory' | 'billing' | 'ai-assistant' | 'smart-restock' | 'invoice-scanner' | 'reviews';
+export type Page = 'dashboard' | 'inventory' | 'billing' | 'ai-assistant' | 'smart-restock' | 'invoice-scanner' | 'reviews' | 'settings';
 
 export interface ReviewItem {
   id: string;
