@@ -1,4 +1,5 @@
 import { Product } from '../types';
+import { normalizeSlangSpeech, matchProductPhonetically } from './speechAccentService';
 
 export interface VoiceStockChange {
   product: Product;
@@ -201,7 +202,8 @@ const KIRANA_CATALOG: Record<string, KiranaCatalogItem> = {
  * Normalizes speech text: converts word numbers to digits
  */
 function normalizeSpokenText(raw: string): string {
-  let text = ' ' + raw.toLowerCase().trim() + ' ';
+  const slangNormalized = normalizeSlangSpeech(raw);
+  let text = ' ' + slangNormalized.toLowerCase().trim() + ' ';
 
   // Convert common speech recognition homophones for numbers
   text = text.replace(/\b(?:to|too)\b(?=\s+[a-z])/gi, ' 2 ');
@@ -296,7 +298,13 @@ function matchOrMakeProduct(queryText: string, products: Product[]): { product: 
     if (tokenMatch) return { product: tokenMatch, isNew: false };
   }
 
-  // 4. Auto-create as new custom product so voice restock never fails
+  // 4. Phonetic Soundex and fuzzy similarity match (handles regional Indian accents & slang)
+  const phoneticMatch = matchProductPhonetically(cleanQ, products);
+  if (phoneticMatch) {
+    return { product: phoneticMatch.product, isNew: false };
+  }
+
+  // 5. Auto-create as new custom product so voice restock never fails
   const formattedName = cleanQ
     .split(/\s+/)
     .map(w => w.charAt(0).toUpperCase() + w.slice(1))

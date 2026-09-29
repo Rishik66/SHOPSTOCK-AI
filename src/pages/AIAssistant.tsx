@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext';
 import { tr } from '../i18n';
 import { AIMessage, AIAction } from '../types';
 import { processQuery, isRealAIConfigured } from '../services/aiService';
+import { extractBestSpeechAlternative, normalizeSlangSpeech } from '../services/speechAccentService';
 
 export function AIAssistant() {
   const { products, setProducts, transactions, language, addNotification, currentUser, setCurrentPage } = useApp();
@@ -175,7 +176,7 @@ export function AIAssistant() {
     recognition.lang = selectedVoiceLang || 'en-IN';
     recognition.continuous = true; // DO NOT cut off prematurely
     recognition.interimResults = true; // Live typing as you speak
-    recognition.maxAlternatives = 3;
+    recognition.maxAlternatives = 5; // Multi-candidate phonetic alternatives for regional accents
 
     recognition.onstart = () => {
       isListeningRef.current = true;
@@ -189,14 +190,8 @@ export function AIAssistant() {
     };
 
     recognition.onresult = (event: any) => {
-      let speech = '';
-      for (let i = 0; i < event.results.length; ++i) {
-        const itemText = event.results[i][0].transcript.trim();
-        if (itemText) {
-          speech += (speech ? ' ' : '') + itemText; // Space-delimited!
-        }
-      }
-      const clean = speech.trim();
+      const { bestTranscript } = extractBestSpeechAlternative(event.results, products);
+      const clean = bestTranscript.trim();
       if (clean) {
         capturedTextRef.current = clean;
         setTranscriptPreview(clean);

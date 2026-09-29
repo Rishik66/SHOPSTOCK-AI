@@ -1,4 +1,5 @@
 import { Product } from '../types';
+import { normalizeSlangSpeech, matchProductPhonetically } from './speechAccentService';
 
 export interface VoiceBillingItem {
   product: Product;
@@ -160,7 +161,9 @@ function stripBillingPhrases(text: string): string {
 function normalizeSpokenText(raw: string): string {
   // 1. Strip billing phrases first
   const preStripped = stripBillingPhrases(raw);
-  let text = ' ' + preStripped.toLowerCase().trim() + ' ';
+  // 2. Normalize Indian regional accents and retail slang
+  const slangNormalized = normalizeSlangSpeech(preStripped);
+  let text = ' ' + slangNormalized.toLowerCase().trim() + ' ';
 
   // 2. Convert common speech recognition homophones for numbers ONLY when preceding a noun (not articles/prepositions)
   // e.g. "to biscuits" -> "2 biscuits", but NOT "to the"
@@ -252,6 +255,12 @@ function matchProductInInventory(queryText: string, products: Product[]): Produc
       p.category.toLowerCase().includes(token)
     );
     if (tokenMatch) return tokenMatch;
+  }
+
+  // 4. Phonetic Soundex and fuzzy similarity match (handles regional Indian accents & slang)
+  const phoneticMatch = matchProductPhonetically(cleanQ, products);
+  if (phoneticMatch) {
+    return phoneticMatch.product;
   }
 
   return null;

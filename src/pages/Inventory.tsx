@@ -8,6 +8,7 @@ import { useApp } from '../context/AppContext';
 import { tr } from '../i18n';
 import { Product } from '../types';
 import { parseVoiceInventoryCommand, VoiceStockChange } from '../services/voiceInventoryService';
+import { extractBestSpeechAlternative, normalizeSlangSpeech } from '../services/speechAccentService';
 import { BarcodeScannerModal } from '../components/BarcodeScannerModal';
 import { generateEAN13Barcode } from '../services/barcodeService';
 
@@ -183,7 +184,8 @@ export function Inventory() {
     setVoiceFeedback(null);
     setVoiceChanges(null);
 
-    const result = parseVoiceInventoryCommand(rawSpeech, products);
+    const normalizedSpeech = normalizeSlangSpeech(rawSpeech);
+    const result = parseVoiceInventoryCommand(normalizedSpeech, products);
 
     if (!result.success || result.changes.length === 0) {
       setVoiceError(result.feedback);
@@ -265,7 +267,7 @@ export function Inventory() {
     recognition.lang = voiceLang || 'en-IN';
     recognition.continuous = true; // DO NOT cut off on pauses
     recognition.interimResults = true; // Live typing as you speak
-    recognition.maxAlternatives = 3;
+    recognition.maxAlternatives = 5; // Evaluate top 5 candidate transcripts across regional accents
 
     recognition.onstart = () => {
       isListeningRef.current = true;
@@ -274,14 +276,8 @@ export function Inventory() {
     };
 
     recognition.onresult = (event: any) => {
-      let speech = '';
-      for (let i = 0; i < event.results.length; ++i) {
-        const itemText = event.results[i][0].transcript.trim();
-        if (itemText) {
-          speech += (speech ? ' ' : '') + itemText; // Space-delimited to prevent word collision!
-        }
-      }
-      const clean = speech.trim();
+      const { bestTranscript } = extractBestSpeechAlternative(event.results, products);
+      const clean = bestTranscript.trim();
       if (clean) {
         capturedTextRef.current = clean;
         setVoiceTranscript(clean);

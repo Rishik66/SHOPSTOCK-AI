@@ -1,5 +1,6 @@
 import { Product, Transaction, Language, AIAction, UserAccount } from '../types';
 import { tr } from '../i18n';
+import { normalizeSlangSpeech, matchProductPhonetically } from './speechAccentService';
 
 export interface AIResponse {
   text: string;
@@ -79,11 +80,27 @@ export async function testGeminiApiKey(key: string): Promise<{ success: boolean;
 
 function findProduct(name: string, products: Product[]): Product | null {
   const q = name.toLowerCase().trim();
-  return products.find(p => 
-    p.name.toLowerCase().includes(q) || q.includes(p.name.toLowerCase())
-  ) || products.find(p => 
+  if (!q || products.length === 0) return null;
+
+  // 1. Direct or substring match
+  const direct = products.find(p => 
+    p.name.toLowerCase() === q ||
+    p.name.toLowerCase().includes(q) || 
+    q.includes(p.name.toLowerCase())
+  );
+  if (direct) return direct;
+
+  // 2. Word token match
+  const tokenMatch = products.find(p => 
     p.name.toLowerCase().split(' ').some(w => q.includes(w) && w.length > 3)
-  ) || null;
+  );
+  if (tokenMatch) return tokenMatch;
+
+  // 3. Phonetic Soundex & fuzzy similarity match for accents and slang
+  const phonetic = matchProductPhonetically(q, products);
+  if (phonetic) return phonetic.product;
+
+  return null;
 }
 
 function getTodayStr(): string {
@@ -213,7 +230,8 @@ CRITICAL INSTRUCTIONS:
 3. If the user asks general store questions, business questions, or casual conversation, answer naturally, accurately, and politely.
 4. If the user explicitly asks to add or remove stock (e.g., "Add 10 Maggi" or "Remove 2 Parle-G"), reply helpfully AND append an action tag at the very end of your response on a new line:
    [ACTION: {"type": "ADD_STOCK" | "REMOVE_STOCK", "productName": "Exact Product Name", "quantity": number}]
-5. Keep answers well-formatted with bullet points, bold key terms, and rupee (₹) amounts so it is easy to read on mobile.`;
+5. Keep answers well-formatted with bullet points, bold key terms, and rupee (₹) amounts so it is easy to read on mobile.
+6. ACCENT, SLANG & SPEECH RECOGNITION TOLERANCE: The user speaks Indian English, Hinglish, Tanglish (Tamil+English), Kanglish (Kannada+English), or regional Indian languages. Their speech may be transcribed with regional accents, phonetic spelling (e.g., 'all' for 'oil', 'meggi' for 'maggi', 'biskut' for 'biscuit', 'milku' for 'milk', 'bredu' for 'bread', 'solt' for 'salt', 'self excel' for 'surf excel', 'kolgate' for 'colgate', 'tree' for 'three', 'won' for 'one'). Always understand their underlying intent regardless of dialect, slang, regional vowel suffixes (-u, -i), or dropped syllables.`;
 }
 
 /**
@@ -481,7 +499,8 @@ function processQueryLocal(
   language: Language,
   currentUser?: UserAccount | null
 ): AIResponse {
-  const q = query.toLowerCase().trim();
+  const rawQ = query.toLowerCase().trim();
+  const q = normalizeSlangSpeech(rawQ);
 
   // GREETINGS
   if (['hello', 'hi', 'hey', 'namaste', 'namaskaram', 'namaskara', 'good morning', 'good evening', 'good afternoon'].some(g => q === g || q.startsWith(g + ' ') || q.endsWith(' ' + g))) {
@@ -645,15 +664,17 @@ export async function processQuery(
   currentUser?: UserAccount | null,
   chatHistory?: { role: 'user' | 'assistant'; text: string }[]
 ): Promise<AIResponse> {
+  const normalizedQuery = normalizeSlangSpeech(query);
+
   // If Google Gemini is configured and we are online, call real Gemini AI!
   if (isRealAIConfigured() && (typeof navigator === 'undefined' || navigator.onLine)) {
     try {
-      return await callGeminiAPI(query, products, transactions, language, currentUser, chatHistory);
+      return await callGeminiAPI(normalizedQuery, products, transactions, language, currentUser, chatHistory);
     } catch (err: any) {
       console.warn('Gemini API call notice, falling back to local retail engine:', err?.message);
     }
   }
 
   // Fallback to local intelligent retail business intelligence engine
-  return processQueryLocal(query, products, transactions, language, currentUser);
+  return processQueryLocal(normalizedQuery, products, transactions, language, currentUser);
 }

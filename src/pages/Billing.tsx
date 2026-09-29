@@ -9,6 +9,7 @@ import { useApp } from '../context/AppContext';
 import { tr } from '../i18n';
 import { Product, CartItem } from '../types';
 import { parseVoiceBillingCommand } from '../services/voiceBillingService';
+import { extractBestSpeechAlternative, normalizeSlangSpeech } from '../services/speechAccentService';
 import { BarcodeScannerModal } from '../components/BarcodeScannerModal';
 import { identifyProductByBarcode, playBarcodeBeep } from '../services/barcodeService';
 
@@ -202,7 +203,8 @@ export function Billing() {
     setVoiceError(null);
     setVoiceFeedback(null);
 
-    const result = parseVoiceBillingCommand(speechText, products, voiceLang);
+    const normalizedText = normalizeSlangSpeech(speechText);
+    const result = parseVoiceBillingCommand(normalizedText, products, voiceLang);
 
     if (result.action === 'NOT_UNDERSTOOD' || result.action === 'NO_ITEMS_FOUND' || result.action === 'OUT_OF_STOCK') {
       setVoiceError(result.feedback);
@@ -306,7 +308,7 @@ export function Billing() {
     recognition.lang = voiceLang || 'en-IN';
     recognition.continuous = true; // DO NOT cut off on small pauses
     recognition.interimResults = true; // Live typing as you speak
-    recognition.maxAlternatives = 3;
+    recognition.maxAlternatives = 5; // Evaluate top 5 candidate transcripts across regional accents
 
     recognition.onstart = () => {
       isListeningRef.current = true;
@@ -315,14 +317,8 @@ export function Billing() {
     };
 
     recognition.onresult = (event: any) => {
-      let speech = '';
-      for (let i = 0; i < event.results.length; ++i) {
-        const itemText = event.results[i][0].transcript.trim();
-        if (itemText) {
-          speech += (speech ? ' ' : '') + itemText; // Space-delimited to prevent word collision!
-        }
-      }
-      const clean = speech.trim();
+      const { bestTranscript } = extractBestSpeechAlternative(event.results, products);
+      const clean = bestTranscript.trim();
       if (clean) {
         capturedTextRef.current = clean;
         setVoiceTranscript(clean);
