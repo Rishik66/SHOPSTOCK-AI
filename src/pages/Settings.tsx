@@ -27,8 +27,11 @@ import { useApp, DEMO_USER } from '../context/AppContext';
 import { tr } from '../i18n';
 import { Language } from '../types';
 import { SupabaseModal } from '../components/SupabaseModal';
+import { OtpGatewayModal } from '../components/OtpGatewayModal';
 import { isSupabaseConfigured } from '../services/supabaseClient';
 import { getGeminiApiKey, setGeminiApiKey, isRealAIConfigured, testGeminiApiKey } from '../services/aiService';
+import { isEmailJsReady, getEmailJsConfig } from '../services/emailService';
+import { isSmsConfigured, getSmsConfig } from '../services/smsService';
 
 export function Settings() {
   const { 
@@ -49,6 +52,7 @@ export function Settings() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatusMsg, setSyncStatusMsg] = useState<{ text: string; success: boolean } | null>(null);
   const [showConfigModal, setShowConfigModal] = useState(false);
+  const [showOtpGatewayModal, setShowOtpGatewayModal] = useState(false);
 
   // Real AI (Gemini) State
   const [geminiKeyInput, setGeminiKeyInput] = useState<string>(getGeminiApiKey());
@@ -549,7 +553,81 @@ export function Settings() {
         </div>
       </div>
 
-      {/* SECTION 4: ACCOUNT SESSION & LOGOUT */}
+      {/* SECTION 4: REAL-TIME OTP GATEWAY (EMAILJS & SMS) */}
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-xs overflow-hidden">
+        <div className="p-5 sm:p-6 border-b border-gray-100 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+              <Key size={20} />
+            </div>
+            <div>
+              <h2 className="text-base sm:text-lg font-bold text-gray-900 flex items-center gap-2">
+                <span>OTP Delivery Gateway (EmailJS & SMS)</span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
+                  isEmailJsReady() ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'
+                }`}>
+                  {isEmailJsReady() ? 'EmailJS Connected' : 'Setup Needed'}
+                </span>
+              </h2>
+              <p className="text-xs sm:text-sm text-gray-500">
+                Configure real-time dispatch of verification codes to personal Gmail/Email inboxes or mobile SMS.
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setShowOtpGatewayModal(true)}
+            className="flex items-center gap-1.5 text-xs font-bold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-3.5 py-2 rounded-lg transition-colors cursor-pointer"
+          >
+            <Key size={13} />
+            <span>Configure Gateway</span>
+          </button>
+        </div>
+
+        <div className="p-5 sm:p-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                  <Mail size={14} className="text-blue-600" /> Personal Email (EmailJS)
+                </span>
+                <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                  isEmailJsReady() ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800'
+                }`}>
+                  {isEmailJsReady() ? 'Active' : 'Missing Service/Template ID'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-600">
+                Delivers 6-digit OTP codes directly to user Gmail / Email inboxes.
+              </p>
+              <div className="text-[11px] font-mono text-slate-500 bg-white p-2 rounded border border-slate-200 truncate">
+                Public Key: {getEmailJsConfig().publicKey || 'Not set'}
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                  <Key size={14} className="text-indigo-600" /> Mobile SMS Gateway
+                </span>
+                <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                  isSmsConfigured() ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-700'
+                }`}>
+                  {isSmsConfigured() ? 'Active' : 'Optional (Fast2SMS/Twilio)'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-600">
+                Sends OTP text messages directly to Indian mobile phone numbers (+91).
+              </p>
+              <div className="text-[11px] font-mono text-slate-500 bg-white p-2 rounded border border-slate-200 truncate">
+                Provider: {getSmsConfig().provider !== 'none' ? getSmsConfig().provider.toUpperCase() : 'None configured'}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* SECTION 5: ACCOUNT SESSION & LOGOUT */}
       <div className="bg-white rounded-2xl border border-rose-200/80 shadow-xs overflow-hidden">
         <div className="p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -593,6 +671,9 @@ export function Settings() {
 
       {/* Supabase Configuration Modal */}
       <SupabaseModal isOpen={showConfigModal} onClose={() => setShowConfigModal(false)} />
+
+      {/* OTP Delivery Gateway Modal */}
+      <OtpGatewayModal isOpen={showOtpGatewayModal} onClose={() => setShowOtpGatewayModal(false)} />
     </div>
   );
 }

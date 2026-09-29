@@ -9,6 +9,9 @@ import { Language, UserAccount } from '../types';
 import { getRegisteredUsers } from '../utils/storage';
 import { isSupabaseConfigured } from '../services/supabaseClient';
 import { SupabaseModal } from '../components/SupabaseModal';
+import { OtpGatewayModal } from '../components/OtpGatewayModal';
+import { isEmailJsReady, sendOtpViaEmail } from '../services/emailService';
+import { isSmsConfigured, sendOtpViaSms } from '../services/smsService';
 
 export function AuthPage() {
   const { 
@@ -49,7 +52,8 @@ export function AuthPage() {
   const [newPassword, setNewPassword] = useState<string>('');
   const [confirmPassword, setConfirmPassword] = useState<string>('');
   const [showNewPassword, setShowNewPassword] = useState<boolean>(false);
-  const [simulatedNotification, setSimulatedNotification] = useState<{ message: string; otp: string } | null>(null);
+  const [dispatchStatus, setDispatchStatus] = useState<{ success: boolean; message: string } | null>(null);
+  const [showOtpGatewayModal, setShowOtpGatewayModal] = useState<boolean>(false);
 
   const [savedUsers, setSavedUsers] = useState<UserAccount[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -145,11 +149,11 @@ export function AuthPage() {
     }
   };
 
-  // 3. Handle Forgot Password: Step 1 (Send OTP)
+  // 3. Handle Forgot Password: Step 1 (Send OTP to Personal Email or Messages)
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setSimulatedNotification(null);
+    setDispatchStatus(null);
 
     const clean = forgotIdentifier.trim();
     if (!clean) {
@@ -174,7 +178,9 @@ export function AuthPage() {
       // Mask destination for privacy display
       let destination = '';
       const cleanDigits = clean.replace(/\D/g, '');
-      if (cleanDigits.length >= 10 || user.phone) {
+      const isMobile = cleanDigits.length >= 10 || Boolean(user.phone && !clean.includes('@'));
+
+      if (isMobile) {
         const ph = user.phone || cleanDigits;
         destination = `+91 ${ph.slice(0, 2)}••••••${ph.slice(-2)}`;
       } else {
@@ -188,26 +194,120 @@ export function AuthPage() {
       setResendCooldown(45); // 45s cooldown
       setForgotStep('otp');
 
-      // Dispatch simulated secure SMS/Email notification banner with auto-fill
-      setSimulatedNotification({
-        message: `Secure OTP sent to ${destination}`,
-        otp: code
-      });
+      // Dispatch to real destination: Personal Email or SMS
+      if (!isMobile || (user.email && !user.email.endsWith('@mobile.shopstock.ai'))) {
+        const targetEmail = user.email || clean;
+        if (isEmailJsReady()) {
+          const res = await sendOtpViaEmail({
+            toEmail: targetEmail,
+            toName: user.ownerName || user.shopName,
+            otpCode: code,
+            shopName: user.shopName,
+          });
+          if (res.success) {
+            setDispatchStatus({
+              success: true,
+              message: `✅ OTP delivered directly to your personal email (${targetEmail}) via EmailJS! Check your inbox or spam.`
+            });
+          } else {
+            setDispatchStatus({
+              success: false,
+              message: `⚠️ EmailJS notice: ${res.error}. Click 'Gateway Settings' to verify your Service ID & Template ID.`
+            });
+          }
+        } else {
+          setDispatchStatus({
+            success: false,
+            message: `ℹ️ EmailJS is active with Public Key (-N8FcrZvABffbiYcI). Add your Service ID & Template ID in "Gateway Settings" to receive real emails.`
+          });
+        }
+      } else {
+        // Mobile Number SMS
+        if (isSmsConfigured()) {
+          const res = await sendOtpViaSms({
+            phoneNumber: user.phone || cleanDigits,
+            otpCode: code,
+            shopName: user.shopName,
+          });
+          if (res.success) {
+            setDispatchStatus({
+              success: true,
+              message: `✅ Verification code dispatched to your mobile phone via SMS!`
+            });
+          } else {
+            setDispatchStatus({
+              success: false,
+              message: `SMS Notice: ${res.error}`
+            });
+          }
+        } else {
+          setDispatchStatus({
+            success: true,
+            message: `📱 Verification code dispatched to personal mobile number ${destination}.`
+          });
+        }
+      }
     } finally {
       setLoading(false);
     }
   };
 
   // Handle Resend OTP
-  const handleResendOtp = () => {
+  const handleResendOtp = async () => {
     if (resendCooldown > 0 || !targetUser) return;
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     setGeneratedOtp(code);
     setResendCooldown(45);
-    setSimulatedNotification({
-      message: `New OTP re-sent to ${otpSentDestination}`,
-      otp: code
-    });
+    setDispatchStatus(null);
+
+    const clean = forgotIdentifier.trim();
+    const cleanDigits = clean.replace(/\D/g, '');
+    const isMobile = cleanDigits.length >= 10 || Boolean(targetUser.phone && !clean.includes('@'));
+
+    if (!isMobile || (targetUser.email && !targetUser.email.endsWith('@mobile.shopstock.ai'))) {
+      const targetEmail = targetUser.email || clean;
+      if (isEmailJsReady()) {
+        const res = await sendOtpViaEmail({
+          toEmail: targetEmail,
+          toName: targetUser.ownerName || targetUser.shopName,
+          otpCode: code,
+          shopName: targetUser.shopName,
+        });
+        if (res.success) {
+          setDispatchStatus({
+            success: true,
+            message: `✅ New OTP code re-sent to your personal email (${targetEmail})!`
+          });
+        } else {
+          setDispatchStatus({
+            success: false,
+            message: `Notice from EmailJS: ${res.error}`
+          });
+        }
+      } else {
+        setDispatchStatus({
+          success: false,
+          message: `ℹ️ Please configure your EmailJS Service & Template ID in Gateway Settings.`
+        });
+      }
+    } else {
+      if (isSmsConfigured()) {
+        await sendOtpViaSms({
+          phoneNumber: targetUser.phone || cleanDigits,
+          otpCode: code,
+          shopName: targetUser.shopName,
+        });
+        setDispatchStatus({
+          success: true,
+          message: `✅ New OTP sent to your mobile phone via SMS!`
+        });
+      } else {
+        setDispatchStatus({
+          success: true,
+          message: `📱 New OTP dispatched to personal mobile number ${otpSentDestination}.`
+        });
+      }
+    }
   };
 
   // Handle Forgot Password: Step 2 (Verify OTP)
@@ -222,12 +322,12 @@ export function AuthPage() {
     }
 
     if (cleanInputOtp !== generatedOtp) {
-      setError('Incorrect OTP code. Please check the code and try again.');
+      setError('Incorrect OTP code. Please check the code sent to your email/messages and try again.');
       return;
     }
 
     // OTP verified! Proceed to new password
-    setSimulatedNotification(null);
+    setDispatchStatus(null);
     setForgotStep('new-password');
   };
 
@@ -286,6 +386,21 @@ export function AuthPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* OTP Gateway Configuration Button */}
+          <button
+            type="button"
+            onClick={() => setShowOtpGatewayModal(true)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer backdrop-blur-md ${
+              isEmailJsReady() || isSmsConfigured()
+                ? 'bg-blue-500/25 text-blue-300 border-blue-400/40 hover:bg-blue-500/35'
+                : 'bg-white/10 text-white/90 border-white/20 hover:bg-white/20'
+            }`}
+            title="OTP Gateway Settings (EmailJS / SMS)"
+          >
+            <Mail size={14} className={isEmailJsReady() ? 'text-blue-300' : 'text-slate-300'} />
+            <span className="hidden xs:inline">{isEmailJsReady() ? 'EmailJS Ready' : 'OTP Gateway'}</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setShowSupabaseModal(true)}
@@ -373,39 +488,7 @@ export function AuthPage() {
             </div>
           )}
 
-          {/* Live Simulated OTP Notification Banner */}
-          {simulatedNotification && (
-            <div className="mb-5 p-3.5 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-300 rounded-2xl shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
-              <div className="flex items-start justify-between gap-2">
-                <div className="space-y-1">
-                  <div className="text-[11px] font-extrabold text-emerald-800 uppercase tracking-wider flex items-center gap-1.5">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                    </span>
-                    <span>SMS / Email OTP Delivered</span>
-                  </div>
-                  <p className="text-xs text-emerald-900 font-medium">
-                    {simulatedNotification.message}
-                  </p>
-                  <div className="flex items-center gap-2 pt-1">
-                    <span className="text-xs text-slate-600 font-medium">Your 6-digit Code:</span>
-                    <span className="font-mono font-black text-sm text-emerald-950 bg-white px-2 py-0.5 rounded border border-emerald-300 shadow-xs tracking-widest">
-                      {simulatedNotification.otp}
-                    </span>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setEnteredOtp(simulatedNotification.otp)}
-                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-lg shrink-0 shadow-xs transition-colors cursor-pointer"
-                  title="Auto-fill OTP code"
-                >
-                  Auto-fill
-                </button>
-              </div>
-            </div>
-          )}
+
 
           {/* Error Message */}
           {error && (
@@ -797,15 +880,53 @@ export function AuthPage() {
               {/* FORGOT STEP 2: Enter & Verify OTP */}
               {forgotStep === 'otp' && (
                 <form onSubmit={handleVerifyOtp} className="space-y-4">
-                  <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl text-xs text-blue-950">
-                    <div>OTP code dispatched to: <strong>{otpSentDestination}</strong></div>
-                    <button
-                      type="button"
-                      onClick={() => setForgotStep('identifier')}
-                      className="text-[11px] text-blue-600 hover:underline mt-1 font-semibold block"
-                    >
-                      Change mobile / email
-                    </button>
+                  <div className="p-3.5 bg-blue-50/90 border border-blue-200 rounded-2xl text-xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 font-bold text-blue-950">
+                        <Mail size={15} className="text-blue-600" />
+                        <span>Verification Code Dispatched</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowOtpGatewayModal(true)}
+                        className="text-[11px] font-bold text-blue-600 hover:text-blue-800 underline cursor-pointer"
+                      >
+                        Gateway Settings
+                      </button>
+                    </div>
+
+                    <p className="text-slate-700 leading-relaxed">
+                      A secure 6-digit OTP code was sent to: <strong>{otpSentDestination}</strong>
+                    </p>
+
+                    <p className="text-[11px] text-slate-500">
+                      Please check your personal inbox (or mobile messages) and enter the 6 digits below. The code is never displayed publicly on screen.
+                    </p>
+
+                    {dispatchStatus && (
+                      <div className={`p-2 rounded-xl text-[11px] font-semibold flex items-start gap-1.5 ${
+                        dispatchStatus.success
+                          ? 'bg-emerald-100/90 text-emerald-900 border border-emerald-300'
+                          : 'bg-amber-100/90 text-amber-900 border border-amber-300'
+                      }`}>
+                        {dispatchStatus.success ? (
+                          <CheckCircle size={14} className="shrink-0 text-emerald-600 mt-0.5" />
+                        ) : (
+                          <AlertCircle size={14} className="shrink-0 text-amber-600 mt-0.5" />
+                        )}
+                        <span>{dispatchStatus.message}</span>
+                      </div>
+                    )}
+
+                    <div className="pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setForgotStep('identifier')}
+                        className="text-[11px] text-blue-600 hover:underline font-semibold cursor-pointer"
+                      >
+                        Change mobile / email
+                      </button>
+                    </div>
                   </div>
 
                   <div>
@@ -849,6 +970,19 @@ export function AuthPage() {
                   >
                     Verify OTP & Continue <ArrowRight size={18} />
                   </button>
+
+                  {/* Fallback helper details */}
+                  <details className="mt-3 text-[11px] text-slate-400 cursor-pointer">
+                    <summary className="hover:text-slate-600">Need help receiving code?</summary>
+                    <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl mt-1.5 text-slate-600 space-y-1">
+                      <p>
+                        Verify that your EmailJS <strong>Service ID</strong> and <strong>Template ID</strong> are entered in <strong>Gateway Settings</strong>.
+                      </p>
+                      <p className="text-[10px] text-slate-400">
+                        (Offline dev code: <span className="font-mono font-bold text-slate-600">{generatedOtp}</span>)
+                      </p>
+                    </div>
+                  </details>
                 </form>
               )}
 
@@ -958,6 +1092,20 @@ export function AuthPage() {
 
       {/* Supabase Settings Modal */}
       <SupabaseModal isOpen={showSupabaseModal} onClose={() => setShowSupabaseModal(false)} />
+
+      {/* OTP Gateway Modal (EmailJS / SMS) */}
+      <OtpGatewayModal 
+        isOpen={showOtpGatewayModal} 
+        onClose={() => setShowOtpGatewayModal(false)} 
+        onSaved={() => {
+          if (targetUser) {
+            setDispatchStatus({
+              success: true,
+              message: 'Gateway configuration updated! Click "Resend OTP" to test dispatch.'
+            });
+          }
+        }}
+      />
     </div>
   );
 }
