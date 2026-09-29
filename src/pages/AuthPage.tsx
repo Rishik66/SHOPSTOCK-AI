@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Store, User, Lock, Mail, ArrowRight, ShieldCheck, Sparkles, Globe, Eye, EyeOff, Check, UserCheck } from 'lucide-react';
+import { Store, User, Lock, Mail, ArrowRight, ShieldCheck, Sparkles, Globe, Eye, EyeOff, Check, UserCheck, Cloud, RefreshCw } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Language, UserAccount } from '../types';
 import { getRegisteredUsers } from '../utils/storage';
+import { isSupabaseConfigured } from '../services/supabaseClient';
+import { SupabaseModal } from '../components/SupabaseModal';
 
 export function AuthPage() {
   const { login, signup, loginDemo, language, setLanguage } = useApp();
@@ -23,6 +25,8 @@ export function AuthPage() {
 
   const [savedUsers, setSavedUsers] = useState<UserAccount[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [showSupabaseModal, setShowSupabaseModal] = useState(false);
   const passwordInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -35,20 +39,25 @@ export function AuthPage() {
     }
   }, [mode]);
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     if (!loginIdentifier.trim() || !loginPassword.trim()) {
       setError('Please enter both your name/email and password.');
       return;
     }
-    const res = login(loginIdentifier.trim(), loginPassword);
-    if (!res.success) {
-      setError(res.error || 'Failed to login');
+    setLoading(true);
+    try {
+      const res = await login(loginIdentifier.trim(), loginPassword);
+      if (!res.success) {
+        setError(res.error || 'Failed to login');
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleSignupSubmit = (e: React.FormEvent) => {
+  const handleSignupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     if (!shopName.trim() || !ownerName.trim() || !signupEmail.trim() || !signupPassword.trim()) {
@@ -59,15 +68,20 @@ export function AuthPage() {
       setError('Password should be at least 4 characters.');
       return;
     }
-    const res = signup({
-      shopName: shopName.trim(),
-      ownerName: ownerName.trim(),
-      email: signupEmail.trim(),
-      password: signupPassword,
-      category
-    });
-    if (!res.success) {
-      setError(res.error || 'Failed to register');
+    setLoading(true);
+    try {
+      const res = await signup({
+        shopName: shopName.trim(),
+        ownerName: ownerName.trim(),
+        email: signupEmail.trim(),
+        password: signupPassword,
+        category
+      });
+      if (!res.success) {
+        setError(res.error || 'Failed to register');
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -85,19 +99,35 @@ export function AuthPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 bg-white/10 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10">
-          <Globe size={16} className="text-blue-300" />
-          <select
-            value={language}
-            onChange={(e) => setLanguage(e.target.value as Language)}
-            aria-label="Language"
-            className="bg-transparent text-sm text-white font-medium outline-none cursor-pointer"
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowSupabaseModal(true)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer backdrop-blur-md ${
+              isSupabaseConfigured()
+                ? 'bg-emerald-500/25 text-emerald-300 border-emerald-400/40 hover:bg-emerald-500/35'
+                : 'bg-white/10 text-white/90 border-white/20 hover:bg-white/20'
+            }`}
+            title="Cloud Database Settings (Supabase)"
           >
-            <option value="en" className="text-slate-900">English</option>
-            <option value="te" className="text-slate-900">తెలుగు (Telugu)</option>
-            <option value="hi" className="text-slate-900">हिन्दी (Hindi)</option>
-            <option value="kn" className="text-slate-900">ಕನ್ನಡ (Kannada)</option>
-          </select>
+            <Cloud size={14} className={isSupabaseConfigured() ? 'text-emerald-400' : 'text-amber-400'} />
+            <span className="hidden xs:inline">{isSupabaseConfigured() ? 'Cloud Synced' : 'Cloud Database'}</span>
+          </button>
+
+          <div className="flex items-center gap-2 bg-white/10 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10">
+            <Globe size={16} className="text-blue-300" />
+            <select
+              value={language}
+              onChange={(e) => setLanguage(e.target.value as Language)}
+              aria-label="Language"
+              className="bg-transparent text-sm text-white font-medium outline-none cursor-pointer"
+            >
+              <option value="en" className="text-slate-900">English</option>
+              <option value="te" className="text-slate-900">తెలుగు (Telugu)</option>
+              <option value="hi" className="text-slate-900">हिन्दी (Hindi)</option>
+              <option value="kn" className="text-slate-900">ಕನ್ನಡ (Kannada)</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -388,6 +418,9 @@ export function AuthPage() {
       <div className="text-center text-xs text-blue-300/80 font-medium">
         ShopStock AI — “Scan. Speak. Sell. ShopStock handles the rest.”
       </div>
+
+      {/* Supabase Settings Modal */}
+      <SupabaseModal isOpen={showSupabaseModal} onClose={() => setShowSupabaseModal(false)} />
     </div>
   );
 }

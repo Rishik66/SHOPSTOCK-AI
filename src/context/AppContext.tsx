@@ -17,6 +17,15 @@ import {
   loadLanguage,
   saveLanguage as storageSaveLanguage,
 } from '../utils/storage';
+import { isSupabaseConfigured } from '../services/supabaseClient';
+import {
+  syncSignUpToSupabase,
+  syncSignInWithSupabase,
+  fetchProductsFromSupabase,
+  saveProductsToSupabase,
+  fetchTransactionsFromSupabase,
+  saveTransactionToSupabase
+} from '../services/supabaseSyncService';
 
 export { DEMO_USER };
 
@@ -27,12 +36,6 @@ const DEMO_PRODUCT_NAMES = new Set([
 ]);
 const DEMO_TXN_IDS = new Set(['d1', 'd2', 'd3', 'd4', 'd5', 'd6', 't1', 't2']);
 
-const DEMO_PRODUCTS: Product[] = [];
-
-function generateDemoTransactions(_products: Product[]): Transaction[] {
-  return [];
-}
-
 interface AppContextType {
   currentUser: UserAccount | null;
   products: Product[];
@@ -41,16 +44,18 @@ interface AppContextType {
   notifications: AppNotification[];
   currentPage: Page;
   ready: boolean;
+  isCloudConnected: boolean;
   setProducts: (products: Product[]) => void;
   setTransactions: (transactions: Transaction[]) => void;
   setLanguage: (lang: Language) => void;
   setCurrentPage: (page: Page) => void;
   addNotification: (notification: Omit<AppNotification, 'id' | 'timestamp'>) => void;
   resetDemoData: () => void;
-  login: (email: string, pass: string) => { success: boolean; error?: string };
-  signup: (data: Omit<UserAccount, 'id' | 'createdAt'>) => { success: boolean; error?: string };
+  login: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
+  signup: (data: Omit<UserAccount, 'id' | 'createdAt'>) => Promise<{ success: boolean; error?: string }>;
   loginDemo: () => void;
   logout: () => void;
+  refreshCloudSync: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -69,6 +74,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [ready, setReady] = useState(false);
+  const [isCloudConnected, setIsCloudConnected] = useState(false);
 
   // Initialize or switch store data based on active user
   const loadUserData = (user: UserAccount | null) => {
@@ -87,7 +93,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setProductsState([]);
       setTransactionsState([]);
     } else {
-      // Load user products and transactions, stripping any legacy demo sample products
+      // Load user products and transactions from local storage
       const loadedProducts = loadUserProducts(userId);
       const cleanedProducts = loadedProducts.filter(
         p => !(DEMO_PRODUCT_IDS.has(p.id) && DEMO_PRODUCT_NAMES.has(p.name.toLowerCase()))
@@ -106,6 +112,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setProductsState(cleanedProducts);
       setTransactionsState(cleanedTxns);
     }
+
+    // Two-way background sync with Supabase Cloud
+    if (isSupabaseConfigured() && userId && userId !== DEMO_USER.id) {
+      setIsCloudConnected(true);
+      fetchProductsFromSupabase(userId).then(remoteProducts => {
+        if (remoteProducts !== null) {
+          if (remoteProducts.length > 0) {
+            setProductsState(remoteProducts);
+            saveUserProducts(userId, remoteProducts);
+          } else {
+            const local = loadUserProducts(userId);
+            if (local.length > 0) {
+              saveProductsToSupabase(userId, local);
+            }
+          }
+        }
+      }).catch(err => console.warn('Supabase product sync background notice:', err));
+
+      fetchTransactionsFromSupabase(userId).then(remoteTxns => {
+        if (remoteTxns !== null) {
+          if (remoteTxns.length > 0) {
+            setTransactionsState(remoteTxns);
+            saveUserTransactions(userId, remoteTxns);
+          } else {
+            const local = loadUserTransactions(userId);
+            if (local.length > 0) {
+              local.forEach(tx => saveTransactionToSupabase(userId, tx));
+            }
+          }
+        }
+      }).catch(err => console.warn('Supabase tx sync background notice:', err));
+    } else {
+      setIsCloudConnected(isSupabaseConfigured());
+    }
   };
 
   useEffect(() => {
@@ -117,7 +157,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const users = getRegisteredUsers();
     saveRegisteredUsers(users);
 
-    // 3. Load active session across browser closes
+    // 3. Check cloud connection
+    setIsCloudConnected(isSupabaseConfigured());
+
+    // 4. Load active session across browser closes
     const savedUser = getCurrentUser();
     if (savedUser) {
       setCurrentUserState(savedUser);
@@ -127,34 +170,66 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setReady(true);
   }, []);
 
-  const login = (identifier: string, pass: string): { success: boolean; error?: string } => {
+  const refreshCloudSync = async () => {
+    setIsCloudConnected(isSupabaseConfigured());
+    if (currentUser) {
+      loadUserData(currentUser);
+    }
+  };
+
+  const login = async (identifier: string, pass: string): Promise<{ success: boolean; error?: string }> => {
     const clean = identifier.trim();
     if (!clean) {
       return { success: false, error: 'Please enter your email, owner name, or shop name.' };
     }
 
-    // Direct and robust user lookup with backup scanning
-    const user = findUserDirectly(clean);
+    // 1. Direct local user lookup
+    const localUser = findUserDirectly(clean);
 
-    if (!user) {
-      return { 
-        success: false, 
-        error: `No account found for "${identifier}". Please check spelling or switch to Create Account.` 
-      };
+    if (localUser) {
+      if (localUser.password !== pass) {
+        return { success: false, error: 'Incorrect password. Please try again.' };
+      }
+
+      setCurrentUser(localUser);
+      setCurrentUserState(localUser);
+      loadUserData(localUser);
+      setCurrentPage('dashboard');
+
+      // Sync user profile to Supabase in background
+      if (isSupabaseConfigured() && localUser.id !== DEMO_USER.id) {
+        syncSignUpToSupabase(localUser).catch(() => {});
+      }
+
+      return { success: true };
     }
 
-    if (user.password !== pass) {
-      return { success: false, error: 'Incorrect password. Please try again.' };
+    // 2. If not found locally, check Supabase cloud (allows multi-device login: laptop & phone)
+    if (isSupabaseConfigured()) {
+      const cloudRes = await syncSignInWithSupabase(clean, pass);
+      if (cloudRes.success && cloudRes.user) {
+        const cloudUser = cloudRes.user;
+        const users = getRegisteredUsers();
+        if (!users.some(u => u.id === cloudUser.id)) {
+          saveRegisteredUsers([...users, cloudUser]);
+        }
+        setCurrentUser(cloudUser);
+        setCurrentUserState(cloudUser);
+        loadUserData(cloudUser);
+        setCurrentPage('dashboard');
+        return { success: true };
+      } else if (cloudRes.error && !cloudRes.notFound) {
+        return { success: false, error: cloudRes.error };
+      }
     }
 
-    setCurrentUser(user);
-    setCurrentUserState(user);
-    loadUserData(user);
-    setCurrentPage('dashboard');
-    return { success: true };
+    return { 
+      success: false, 
+      error: `No account found for "${identifier}". Please check spelling or switch to Create Account.` 
+    };
   };
 
-  const signup = (data: Omit<UserAccount, 'id' | 'createdAt'>): { success: boolean; error?: string } => {
+  const signup = async (data: Omit<UserAccount, 'id' | 'createdAt'>): Promise<{ success: boolean; error?: string }> => {
     const cleanEmail = data.email.trim().toLowerCase();
     const cleanOwner = data.ownerName.trim();
     const cleanShop = data.shopName.trim();
@@ -180,6 +255,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     // Initialize fresh account with 0 products and 0 transactions
     loadUserData(newUser);
+
+    // Asynchronously sync new account to Supabase Cloud
+    if (isSupabaseConfigured()) {
+      syncSignUpToSupabase(newUser).catch(err => console.warn('Supabase signup sync notice:', err));
+    }
+
     setCurrentPage('dashboard');
     return { success: true };
   };
@@ -203,6 +284,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setProductsState(p);
     if (currentUser) {
       saveUserProducts(currentUser.id, p);
+      if (isSupabaseConfigured() && currentUser.id !== DEMO_USER.id) {
+        saveProductsToSupabase(currentUser.id, p).catch(err => console.warn('Supabase product sync error:', err));
+      }
     }
   };
 
@@ -210,6 +294,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setTransactionsState(t);
     if (currentUser) {
       saveUserTransactions(currentUser.id, t);
+      if (isSupabaseConfigured() && currentUser.id !== DEMO_USER.id && t.length > 0) {
+        saveTransactionToSupabase(currentUser.id, t[0]).catch(err => console.warn('Supabase transaction sync error:', err));
+      }
     }
   };
 
@@ -243,6 +330,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       notifications, addNotification,
       currentPage, setCurrentPage,
       ready,
+      isCloudConnected,
+      refreshCloudSync,
       resetDemoData,
       login, signup, loginDemo, logout
     }}>
