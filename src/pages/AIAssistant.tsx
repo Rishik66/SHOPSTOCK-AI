@@ -18,7 +18,9 @@ export function AIAssistant() {
   const [pendingAction, setPendingAction] = useState<AIAction | null>(null);
   const [transcriptPreview, setTranscriptPreview] = useState('');
   const [voiceError, setVoiceError] = useState<string | null>(null);
-  const [selectedVoiceLang, setSelectedVoiceLang] = useState<string>('en-US');
+  const [selectedVoiceLang, setSelectedVoiceLang] = useState<string>(
+    language === 'te' ? 'te-IN' : language === 'hi' ? 'hi-IN' : language === 'kn' ? 'kn-IN' : 'en-IN'
+  );
 
   // Mic Hardware Diagnostic Test State
   const [testingMic, setTestingMic] = useState<boolean>(false);
@@ -41,7 +43,7 @@ export function AIAssistant() {
 
   const srSupported = !!getSR();
 
-  // Match voice locale to UI language by default (default to Indian English)
+  // Match voice locale to UI language by default
   useEffect(() => {
     if (language === 'te') setSelectedVoiceLang('te-IN');
     else if (language === 'hi') setSelectedVoiceLang('hi-IN');
@@ -73,8 +75,8 @@ export function AIAssistant() {
     try {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
-      const langMap: Record<string, string> = { en: 'en-US', te: 'te-IN', hi: 'hi-IN', kn: 'kn-IN' };
-      utterance.lang = langMap[language] || 'en-US';
+      const langMap: Record<string, string> = { en: 'en-IN', te: 'te-IN', hi: 'hi-IN', kn: 'kn-IN' };
+      utterance.lang = selectedVoiceLang || langMap[language] || 'en-IN';
       utterance.rate = 1.0;
       window.speechSynthesis.speak(utterance);
     } catch (e) {
@@ -351,14 +353,41 @@ export function AIAssistant() {
     setPendingAction(null);
   };
 
-  const suggestions = [
-    "📊 How to improve sales?",
-    "💡 Analyze sales & suggest growth ideas",
-    "Which products are low in stock?",
-    "What should I restock?",
-    "How much did I sell today?",
-    "Best selling products"
-  ];
+  const suggestions = React.useMemo(() => {
+    if (language === 'te') {
+      return [
+        "📊 అమ్మకాలు పెంచడం ఎలా?",
+        "🥛 గాయత్రి పాలు ఎంత ఉన్నాయి?",
+        "📦 స్టాక్ ఎంత ఉంది?",
+        "💰 నేటి అమ్మకాలు ఎంత?",
+        "⚠️ తక్కువ స్టాక్ ఉన్నవి ఏవి?"
+      ];
+    }
+    if (language === 'hi') {
+      return [
+        "📊 बिक्री कैसे बढ़ाएं?",
+        "🥛 अमूल दूध कितना है?",
+        "📦 स्टॉक कितना है?",
+        "💰 आज की बिक्री कितनी है?",
+        "⚠️ कम स्टॉक क्या है?"
+      ];
+    }
+    if (language === 'kn') {
+      return [
+        "📊 ಮಾರಾಟ ಹೆಚ್ಚಿಸುವುದು ಹೇಗೆ?",
+        "📦 ದಾಸ್ತಾನು ಎಷ್ಟಿದೆ?",
+        "💰 ಇಂದಿನ ಮಾರಾಟ ಎಷ್ಟು?",
+        "⚠️ ಕಡಿಮೆ ಇರುವ ಸರಕುಗಳು ಯಾವುವು?"
+      ];
+    }
+    return [
+      "📊 How to improve sales?",
+      "🥛 How many Gayatri Milk do I have?",
+      "Which products are low in stock?",
+      "What should I restock?",
+      "How much did I sell today?"
+    ];
+  }, [language]);
 
   return (
     <div className="flex flex-col h-full bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden lg:h-[calc(100vh-4rem)]">
@@ -419,11 +448,11 @@ export function AIAssistant() {
               onChange={(e) => setSelectedVoiceLang(e.target.value)}
               className="bg-transparent font-bold text-blue-700 outline-none cursor-pointer"
             >
-              <option value="en-US">🇺🇸 English (US) [Recommended]</option>
+              <option value="te-IN">🇮🇳 తెలుగు (Telugu)</option>
               <option value="en-IN">🇮🇳 English (India)</option>
               <option value="hi-IN">🇮🇳 हिन्दी (Hindi)</option>
-              <option value="te-IN">🇮🇳 తెలుగు (Telugu)</option>
               <option value="kn-IN">🇮🇳 ಕನ್ನಡ (Kannada)</option>
+              <option value="en-US">🇺🇸 English (US)</option>
             </select>
           </div>
         </div>

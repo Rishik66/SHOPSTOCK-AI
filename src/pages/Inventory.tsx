@@ -378,11 +378,11 @@ export function Inventory() {
                 onChange={(e) => setVoiceLang(e.target.value)}
                 className="bg-transparent text-white font-bold outline-none cursor-pointer"
               >
-                <option value="en-US" className="text-slate-900">🇺🇸 English (US)</option>
+                <option value="te-IN" className="text-slate-900">🇮🇳 తెలుగు (Telugu)</option>
                 <option value="en-IN" className="text-slate-900">🇮🇳 English (India)</option>
                 <option value="hi-IN" className="text-slate-900">🇮🇳 हिन्दी (Hindi)</option>
-                <option value="te-IN" className="text-slate-900">🇮🇳 తెలుగు (Telugu)</option>
                 <option value="kn-IN" className="text-slate-900">🇮🇳 ಕನ್ನಡ (Kannada)</option>
+                <option value="en-US" className="text-slate-900">🇺🇸 English (US)</option>
               </select>
             </div>
 

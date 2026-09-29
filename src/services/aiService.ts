@@ -1,6 +1,7 @@
 import { Product, Transaction, Language, AIAction, UserAccount } from '../types';
 import { tr } from '../i18n';
 import { normalizeSlangSpeech, matchProductPhonetically } from './speechAccentService';
+import { matchProductWithBrandGuard } from './brandProductMatcher';
 
 export interface AIResponse {
   text: string;
@@ -109,23 +110,29 @@ function findProduct(name: string, products: Product[]): Product | null {
   const q = name.toLowerCase().trim();
   if (!q || products.length === 0) return null;
 
-  // 1. Direct or substring match
-  const direct = products.find(p => 
-    p.name.toLowerCase() === q ||
-    p.name.toLowerCase().includes(q) || 
-    q.includes(p.name.toLowerCase())
-  );
-  if (direct) return direct;
+  // 1. BRAND-GUARD MATCH FIRST: strictly prevents brand collision (e.g. Gayatri vs Amul)
+  const brandGuarded = matchProductWithBrandGuard(q, products);
+  if (brandGuarded.product) return brandGuarded.product;
+  if (brandGuarded.reason === 'BRAND_MISMATCH_REJECTED') {
+    // Brand conflict! The user requested e.g. Gayatri Milk, but store only has Amul Milk.
+    // Strictly reject so token or generic matches don't falsely return Amul Milk!
+    return null;
+  }
 
-  // 2. Word token match
-  const tokenMatch = products.find(p => 
-    p.name.toLowerCase().split(' ').some(w => q.includes(w) && w.length > 3)
-  );
-  if (tokenMatch) return tokenMatch;
+  // 2. Direct exact match
+  const exact = products.find(p => p.name.toLowerCase() === q);
+  if (exact) return exact;
 
   // 3. Phonetic Soundex & fuzzy similarity match for accents and slang
   const phonetic = matchProductPhonetically(q, products);
   if (phonetic) return phonetic.product;
+
+  // 4. Prefix or substring match only if no brand conflict
+  const direct = products.find(p => 
+    p.name.toLowerCase().startsWith(q) || 
+    q.startsWith(p.name.toLowerCase())
+  );
+  if (direct) return direct;
 
   return null;
 }
@@ -258,7 +265,9 @@ CRITICAL INSTRUCTIONS:
 4. If the user explicitly asks to add or remove stock (e.g., "Add 10 Maggi" or "Remove 2 Parle-G"), reply helpfully AND append an action tag at the very end of your response on a new line:
    [ACTION: {"type": "ADD_STOCK" | "REMOVE_STOCK", "productName": "Exact Product Name", "quantity": number}]
 5. Keep answers well-formatted with bullet points, bold key terms, and rupee (₹) amounts so it is easy to read on mobile.
-6. ACCENT, SLANG & SPEECH RECOGNITION TOLERANCE: The user speaks Indian English, Hinglish, Tanglish (Tamil+English), Kanglish (Kannada+English), or regional Indian languages. Their speech may be transcribed with regional accents, phonetic spelling (e.g., 'all' for 'oil', 'meggi' for 'maggi', 'biskut' for 'biscuit', 'milku' for 'milk', 'bredu' for 'bread', 'solt' for 'salt', 'self excel' for 'surf excel', 'kolgate' for 'colgate', 'tree' for 'three', 'won' for 'one'). Always understand their underlying intent regardless of dialect, slang, regional vowel suffixes (-u, -i), or dropped syllables.`;
+6. ACCENT, SLANG & SPEECH RECOGNITION TOLERANCE: The user speaks Indian English, Hinglish, Tanglish (Tamil+English), Kanglish (Kannada+English), or regional Indian languages. Their speech may be transcribed with regional accents, phonetic spelling (e.g., 'all' for 'oil', 'meggi' for 'maggi', 'biskut' for 'biscuit', 'milku' for 'milk', 'bredu' for 'bread', 'solt' for 'salt', 'self excel' for 'surf excel', 'kolgate' for 'colgate', 'tree' for 'three', 'won' for 'one'). Always understand their underlying intent regardless of dialect, slang, regional vowel suffixes (-u, -i), or dropped syllables.
+7. BRAND DIFFERENTIATION & CATALOG INTEGRITY: Keep different brands of the same product type STRICTLY separate! For example, 'Gayatri Milk', 'Amul Milk', 'Heritage Milk', and 'Nandini Milk' are distinct products and distinct brands. NEVER confuse or substitute one brand for another. If a customer or shopkeeper asks about 'Gayatri Milk' and the catalog only lists 'Amul Milk', clearly state that Gayatri Milk is not in stock and note that Amul Milk is available.
+8. FULL MULTILINGUAL SUPPORT (Telugu, Hindi, Kannada, English): The user may speak or write in Telugu (తెలుగు), Hindi (हिन्दी), Kannada (ಕನ್ನಡ), or English, including Romanized transliterations (Tanglish, Hinglish, Kanglish). Always understand their query in any of these languages and respond fluently in the requested target language.`;
 }
 
 /**
@@ -395,8 +404,8 @@ function detectStockAction(query: string, products: Product[]): AIAction | null 
   const q = query.toLowerCase().trim();
 
   // ADD_STOCK intent
-  const addMatch = q.match(/(?:add|jodo|seri|chalao|daalo)\s+(\d+)\s+(.+)/i) ||
-                   q.match(/(\d+)\s+(.+?)\s+(?:add|jodo|seri|daalo)/i) ||
+  const addMatch = q.match(/(?:add|jodo|seri|chalao|daalo|kalupu|veyyi|జోడించు|కలుపు|వేయి|जोड़ो|डालो|ಸೇರಿಸಿ)\s+(\d+)\s+(.+)/i) ||
+                   q.match(/(\d+)\s+(.+?)\s+(?:add|jodo|seri|daalo|kalupu|veyyi|జోడించు|కలుపు|వేయి|जोड़ो|डालो|ಸೇರಿಸಿ)/i) ||
                    q.match(/(\d+)\s+(.+?)\s+(?:joḍisu|joḍi)/i);
   if (addMatch) {
     const qty = parseInt(addMatch[1]);
@@ -415,8 +424,8 @@ function detectStockAction(query: string, products: Product[]): AIAction | null 
   }
 
   // REMOVE_STOCK intent
-  const removeMatch = q.match(/(?:remove|hatao|teesey|tisey|nikalo)\s+(\d+)\s+(.+)/i) ||
-                      q.match(/(\d+)\s+(.+?)\s+(?:remove|hatao|teesey|nikalo)/i);
+  const removeMatch = q.match(/(?:remove|hatao|teesey|tisey|nikalo|తీసివేయి|తొలగించు|हटाओ|निकाले|ತೆಗೆದುಹಾಕಿ)\s+(\d+)\s+(.+)/i) ||
+                      q.match(/(\d+)\s+(.+?)\s+(?:remove|hatao|teesey|nikalo|తీసివేయి|తొలగించు|हटाओ|ತೆಗೆದುಹಾಕಿ)/i);
   if (removeMatch) {
     const qty = parseInt(removeMatch[1]);
     const productQuery = removeMatch[2].trim();
@@ -541,20 +550,20 @@ function processQueryLocal(
   const rawQ = query.toLowerCase().trim();
   const q = normalizeSlangSpeech(rawQ);
 
-  // GREETINGS
-  if (['hello', 'hi', 'hey', 'namaste', 'namaskaram', 'namaskara', 'good morning', 'good evening', 'good afternoon'].some(g => q === g || q.startsWith(g + ' ') || q.endsWith(' ' + g))) {
+  // GREETINGS (English, Telugu, Hindi, Kannada)
+  if (['hello', 'hi', 'hey', 'namaste', 'namaskaram', 'namaskara', 'good morning', 'good evening', 'good afternoon', 'నమస్కారం', 'హలో', 'నమస్తే', 'नमस्ते', 'प्रणाम', 'ನಮಸ್ಕಾರ'].some(g => q === g || q.startsWith(g + ' ') || q.endsWith(' ' + g))) {
     return { text: tr(language, 'ai_greeting'), source: 'local' };
   }
 
   // HELP / CAPABILITIES
-  if (q.includes('help') || q.includes('what can you do') || q.includes('kya kar sakte') || q.includes('em cheyaglavu')) {
+  if (q.includes('help') || q.includes('what can you do') || q.includes('kya kar sakte') || q.includes('em cheyaglavu') || q.includes('సహాయం') || q.includes('ఏమి చేయగలవు') || q.includes('మదత్') || q.includes('मदद') || q.includes('ಏನು ಮಾಡಬಹುದು')) {
     const helpMsg = language === 'te' 
-      ? 'నేను మీకు స్టాక్ లెక్కింపు, నేటి అమ్మకాలు, లాభాలు, బెస్ట్ సెల్లర్లు, అమ్మకాలు పెంచే ఐడియాలు మరియు స్టాక్ జోడించడంలో సహాయం చేయగలను. ఉదాహరణకు: "How to improve sales?", "How many Maggi do I have?", లేదా "Today sales".'
+      ? 'నేను మీకు స్టాక్ లెక్కింపు, నేటి అమ్మకాలు, లాభాలు, బెస్ట్ సెల్లర్లు, అమ్మకాలు పెంచే ఐడియాలు మరియు స్టాక్ జోడించడంలో సహాయం చేయగలను. ఉదాహరణకు: "అమ్మకాలు పెంచడం ఎలా?", "గాయత్రి పాలు ఎంత ఉన్నాయి?", "స్టాక్ ఎంత ఉంది?", లేదా "నేటి అమ్మకాలు".'
       : language === 'hi'
-      ? 'मैं आपको स्टॉक की जांच, आज की बिक्री, लाभ, बेस्ट सेलर, बिक्री बढ़ाने के उपाय और स्टॉक जोड़ने/हटाने में मदद कर सकता हूँ। उदाहरण: "How to improve sales?", "How many Maggi do I have?", या "Today sales"।'
+      ? 'मैं आपको स्टॉक की जांच, आज की बिक्री, लाभ, बेस्ट सेलर, बिक्री बढ़ाने के उपाय और स्टॉक जोड़ने/हटाने में मदद कर सकता हूँ। उदाहरण: "बिक्री कैसे बढ़ाएं?", "अमूल दूध कितना है?", या "आज की बिक्री"।'
       : language === 'kn'
-      ? 'ನಾನು ನಿಮಗೆ ದಾಸ್ತಾನು ಪರಿಶೀಲನೆ, ಮಾರಾಟ, ಲಾಭ, ಮಾರಾಟ ಹೆಚ್ಚಿಸುವ ಸಲಹೆಗಳು ಮತ್ತು ಸರಕು ಸೇರಿಸಲು ಸಹಾಯ ಮಾಡುತ್ತೇನೆ. ಉದಾ: "How to improve sales?", "Today sales".'
-      : 'I can help you check product stock, analyze sales, suggest strategies to improve your profits, view top sellers, or add/remove stock. Try asking: "How to improve sales?", "Which products are low in stock?", or "Add 10 Maggi".';
+      ? 'ನಾನು ನಿಮಗೆ ದಾಸ್ತಾನು ಪರಿಶೀಲನೆ, ಮಾರಾಟ, ಲಾಭ, ಮಾರಾಟ ಹೆಚ್ಚಿಸುವ ಸಲಹೆಗಳು ಮತ್ತು ಸರಕು ಸೇರಿಸಲು ಸಹಾಯ ಮಾಡುತ್ತೇನೆ. ಉದಾ: "ಮಾರಾಟ ಹೆಚ್ಚಿಸುವುದು ಹೇಗೆ?", "ಇಂದಿನ ಮಾರಾಟ".'
+      : 'I can help you check product stock, analyze sales, suggest strategies to improve your profits, view top sellers, or add/remove stock. Try asking: "How to improve sales?", "Which products are low in stock?", or "How many Gayatri Milk do I have?".';
     return { text: helpMsg, source: 'local' };
   }
 
@@ -572,7 +581,13 @@ function processQueryLocal(
     q.includes('how to improve') ||
     q.includes('ammakalu penchadam') ||
     q.includes('bikri kaise badhaye') ||
-    q.includes('marata hecchisu')
+    q.includes('marata hecchisu') ||
+    q.includes('అమ్మకాలు పెంచడం ఎలా') ||
+    q.includes('అమ్మకాలు పెంచు') ||
+    q.includes('వ్యాపారం') ||
+    q.includes('बिक्री कैसे बढ़ाएं') ||
+    q.includes('मुनाफा कैसे बढ़ाएं') ||
+    q.includes('ಮಾರಾಟ ಹೆಚ್ಚಿಸುವುದು ಹೇಗೆ')
   ) {
     return {
       text: generateRetailSalesInsights(products, transactions, language, currentUser),
@@ -620,7 +635,10 @@ function processQueryLocal(
   }
 
   // TODAY_PROFIT
-  if (q.includes('profit') || q.includes('labham') || q.includes('munafa') || q.includes('laabha') || q.includes('laabham')) {
+  if (
+    q.includes('profit') || q.includes('labham') || q.includes('munafa') || q.includes('laabha') || q.includes('laabham') ||
+    q.includes('లాభం') || q.includes('నేటి లాభం') || q.includes('मुनाफा') || q.includes('लाभ') || q.includes('ಇಂದಿನ ಲಾಭ') || q.includes('ಲಾಭ')
+  ) {
     const { profit } = getTodaySales(transactions);
     if (profit === 0 && transactions.filter(t => t.date.slice(0,10) === getTodayStr()).length === 0) {
       return { text: tr(language, 'ai_noSalesToday'), source: 'local' };
@@ -629,7 +647,10 @@ function processQueryLocal(
   }
 
   // TODAY_SALES
-  if (q.includes('today') || q.includes('sales') || q.includes('aaj') || q.includes('neti') || q.includes('indina') || q.includes('ammakalu') || q.includes('sell') || q.includes('vikray')) {
+  if (
+    q.includes('today') || q.includes('sales') || q.includes('aaj') || q.includes('neti') || q.includes('indina') || q.includes('ammakalu') || q.includes('sell') || q.includes('vikray') ||
+    q.includes('అమ్మకాలు') || q.includes('నేటి అమ్మకాలు') || q.includes('बिक्री') || q.includes('आज की बिक्री') || q.includes('ಮಾರಾಟ') || q.includes('ಇಂದಿನ ಮಾರಾಟ')
+  ) {
     const { total } = getTodaySales(transactions);
     if (total === 0 && transactions.filter(t => t.date.slice(0,10) === getTodayStr()).length === 0) {
       return { text: tr(language, 'ai_noSalesToday'), source: 'local' };
@@ -638,7 +659,10 @@ function processQueryLocal(
   }
 
   // BEST_SELLERS
-  if (q.includes('best') || q.includes('most sold') || q.includes('popular') || q.includes('top')) {
+  if (
+    q.includes('best') || q.includes('most sold') || q.includes('popular') || q.includes('top') ||
+    q.includes('బెస్ట్') || q.includes('ఎక్కువగా అమ్ముడైన') || q.includes('बेस्ट') || q.includes('ಹೆಚ್ಚು ಮಾರಾಟ')
+  ) {
     const sellers = getBestSellers(transactions);
     if (sellers.length === 0) return { text: tr(language, 'ai_noSalesData'), source: 'local' };
     const list = sellers.map((s, i) => `${i + 1}. ${s.name} — ${s.qty} units`).join('\n');
@@ -646,7 +670,10 @@ function processQueryLocal(
   }
 
   // LEAST_SELLERS
-  if (q.includes('least') || q.includes('slow') || q.includes('worst') || q.includes('kam bikne') || q.includes('takkuva ammudav') || q.includes('kadime maratav')) {
+  if (
+    q.includes('least') || q.includes('slow') || q.includes('worst') || q.includes('kam bikne') || q.includes('takkuva ammudav') || q.includes('kadime maratav') ||
+    q.includes('తక్కువగా అమ్ముడైన') || q.includes('कम बिकने') || q.includes('ಕಡಿಮೆ ಮಾರಾಟ')
+  ) {
     const least = getLeastSellers(products, transactions);
     if (least.length === 0) return { text: tr(language, 'noLeastSelling'), source: 'local' };
     const list = least.map((s, i) => `${i + 1}. ${s.name} — ${s.qty} units`).join('\n');
@@ -654,7 +681,10 @@ function processQueryLocal(
   }
 
   // LOW_STOCK
-  if (q.includes('low stock') || q.includes('low') || q.includes('kam stock') || q.includes('takkuva') || q.includes('kaḍime') || q.includes('restock needed')) {
+  if (
+    q.includes('low stock') || q.includes('low') || q.includes('kam stock') || q.includes('takkuva') || q.includes('kaḍime') || q.includes('restock needed') ||
+    q.includes('తక్కువ స్టాక్') || q.includes('తక్కువ') || q.includes('స్టాక్ తక్కువ') || q.includes('కనిష్ట స్టాక్') || q.includes('कम स्टॉक') || q.includes('ಕಡಿಮೆ ಸ್ಟಾಕ್')
+  ) {
     const lowItems = products.filter(p => p.stock <= p.minimumStock);
     if (lowItems.length === 0) return { text: tr(language, 'ai_noLowStock'), source: 'local' };
     const list = lowItems.map(p => `• ${p.name}: ${p.stock} units (min: ${p.minimumStock})`).join('\n');
@@ -662,7 +692,10 @@ function processQueryLocal(
   }
 
   // RESTOCK
-  if (q.includes('restock') || q.includes('order') || q.includes('buy more') || q.includes('what should') || q.includes('kya order')) {
+  if (
+    q.includes('restock') || q.includes('order') || q.includes('buy more') || q.includes('what should') || q.includes('kya order') ||
+    q.includes('రీస్టాక్') || q.includes('ఆర్డర్') || q.includes('కొత్త స్టాక్') || q.includes('రీస్టాకింగ్') || q.includes('रीस्टॉक') || q.includes('ಆರ್ಡರ್')
+  ) {
     const urgent = products
       .filter(p => p.stock <= p.minimumStock * 1.5)
       .sort((a, b) => (a.stock / a.minimumStock) - (b.stock / b.minimumStock))
@@ -672,22 +705,55 @@ function processQueryLocal(
     return { text: `${tr(language, 'ai_restockSuggestion')}\n${list}\n\n${tr(language, 'rst_estimated')}`, source: 'local' };
   }
 
-  // CHECK_STOCK (for specific product)
+  // CHECK_STOCK (Strict Brand-Guarded Product Stock Lookup)
+  const brandGuardedStock = matchProductWithBrandGuard(rawQ, products) || matchProductWithBrandGuard(q, products);
+  if (brandGuardedStock.product) {
+    return { 
+      text: tr(language, 'ai_stockResponse', { name: brandGuardedStock.product.name, count: brandGuardedStock.product.stock }), 
+      source: 'local' 
+    };
+  }
+
+  // If the user requested a specific brand that does NOT exist (e.g. Gayatri Milk when store only has Amul Milk):
+  if (brandGuardedStock.reason === 'BRAND_MISMATCH_REJECTED') {
+    const reqBrand = brandGuardedStock.requestedBrand 
+      ? brandGuardedStock.requestedBrand.charAt(0).toUpperCase() + brandGuardedStock.requestedBrand.slice(1) 
+      : '';
+    const reqItem = brandGuardedStock.requestedItem 
+      ? brandGuardedStock.requestedItem.charAt(0).toUpperCase() + brandGuardedStock.requestedItem.slice(1) 
+      : 'Product';
+    const fullName = `${reqBrand} ${reqItem}`.trim();
+    const conflicting = brandGuardedStock.conflictingProducts || [];
+
+    let msg = '';
+    if (language === 'te') {
+      msg = `"${fullName}" మీ ఇన్వెంటరీలో లేదు.${conflicting.length > 0 ? ` ప్రస్తుతం స్టాక్‌లో ఉన్నవి: ${conflicting.map(p => `${p.name} (${p.stock} యూనిట్లు)`).join(', ')}.` : ''}`;
+    } else if (language === 'hi') {
+      msg = `"${fullName}" आपकी इन्वेंटरी में नहीं है।${conflicting.length > 0 ? ` वर्तमान में उपलब्ध: ${conflicting.map(p => `${p.name} (${p.stock} यूनिट)`).join(', ')}।` : ''}`;
+    } else if (language === 'kn') {
+      msg = `"${fullName}" ನಿಮ್ಮ ಇನ್ವೆಂಟರಿಯಲ್ಲಿ ಇಲ್ಲ.${conflicting.length > 0 ? ` ಪ್ರಸ್ತುತ ಲಭ್ಯವಿರುವುದು: ${conflicting.map(p => `${p.name} (${p.stock} ಯುನಿಟ್)`).join(', ')}.` : ''}`;
+    } else {
+      msg = `"${fullName}" is not in your inventory.${conflicting.length > 0 ? ` In stock: ${conflicting.map(p => `${p.name} (${p.stock} units)`).join(', ')}.` : ''}`;
+    }
+
+    return { text: msg, source: 'local' };
+  }
+
+  // Direct exact product name lookup if no brand conflict
   for (const product of products) {
-    if (q.includes(product.name.toLowerCase()) || product.name.toLowerCase().split(' ').some(w => w.length > 3 && q.includes(w.toLowerCase()))) {
+    if (q === product.name.toLowerCase() || q.includes(product.name.toLowerCase())) {
       return { text: tr(language, 'ai_stockResponse', { name: product.name, count: product.stock }), source: 'local' };
     }
   }
 
-  // Generic product search
-  const words = q.split(' ').filter(w => w.length > 3);
-  for (const word of words) {
-    const p = findProduct(word, products);
-    if (p) return { text: tr(language, 'ai_stockResponse', { name: p.name, count: p.stock }), source: 'local' };
+  // Find product via findProduct (which also has brand-guard protection)
+  const pFound = findProduct(rawQ, products) || findProduct(q, products);
+  if (pFound) {
+    return { text: tr(language, 'ai_stockResponse', { name: pFound.name, count: pFound.stock }), source: 'local' };
   }
 
   return { 
-    text: `${tr(language, 'ai_unknown')}\n\n💡 *Tip: You can also ask me "How to improve sales?" or connect a free Google Gemini API key in Settings for open conversational answers!*`, 
+    text: `${tr(language, 'ai_unknown')}\n\n💡 *Tip: You can ask me "How to improve sales?", "స్టాక్ ఎంత ఉంది?", or connect a free Google Gemini API key for real-time open conversational answers!*`, 
     source: 'local' 
   };
 }

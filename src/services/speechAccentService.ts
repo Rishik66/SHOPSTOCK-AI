@@ -1,4 +1,5 @@
 import { Product } from '../types';
+import { matchProductWithBrandGuard } from './brandProductMatcher';
 
 /**
  * Phonetic Soundex implementation for Indian retail speech
@@ -80,9 +81,32 @@ export function getLevenshteinSimilarity(s1: string, s2: string): number {
 }
 
 /**
- * Indian accent, slang, and dialect word mappings
+ * Indian accent, slang, and dialect word mappings across all 4 languages (English, Telugu, Hindi, Kannada)
  */
 export const ACCENT_SLANG_MAP: Record<string, string> = {
+  // Brand normalizations (Crucial: Keep brands distinct!)
+  'gayatri': 'gayatri',
+  'gayatridevi': 'gayatri',
+  'గాయత్రి': 'gayatri',
+  'गायत्री': 'gayatri',
+  'ಗಾಯತ್ರಿ': 'gayatri',
+  'amul': 'amul',
+  'ammul': 'amul',
+  'అముల్': 'amul',
+  'అమూల్': 'amul',
+  'अमुल': 'amul',
+  'अमूल': 'amul',
+  'ಅಮುಲ್': 'amul',
+  'ಅಮೂಲ್': 'amul',
+  'heritage': 'heritage',
+  'హెరిటేజ్': 'heritage',
+  'nandini': 'nandini',
+  'నందిని': 'nandini',
+  'jersey': 'jersey',
+  'జెర్సీ': 'jersey',
+  'vijaya': 'vijaya',
+  'విజయ': 'vijaya',
+
   // Common grocery mishearings & slang in Indian English / Hinglish / Tanglish / Kanglish
   'meggi': 'maggi',
   'meggie': 'maggi',
@@ -90,11 +114,15 @@ export const ACCENT_SLANG_MAP: Record<string, string> = {
   'maggy': 'maggi',
   'magic': 'maggi',
   'maggies': 'maggi',
+  'మ్యాగీ': 'maggi',
+  'मैगी': 'maggi',
+  'ಮ್ಯಾಗಿ': 'maggi',
   'nudle': 'noodles',
   'nudles': 'noodles',
   'noodel': 'noodles',
+  'నూడుల్స్': 'noodles',
 
-  // Oil variations (crucial: speech engines frequently hear "all" or "hole" when user says "oil" or "oyil")
+  // Oil variations
   'all': 'oil',
   'al': 'oil',
   'hole': 'oil',
@@ -105,9 +133,18 @@ export const ACCENT_SLANG_MAP: Record<string, string> = {
   'oilu': 'oil',
   'tel': 'oil',
   'taila': 'oil',
+  'nune': 'oil',
+  'నూనె': 'oil',
+  'తైలం': 'oil',
   'yenne': 'oil',
   'enne': 'oil',
-  'ghee': 'oil',
+  'ఎಣ್ಣೆ': 'oil',
+  'तेल': 'oil',
+  'ghee': 'ghee',
+  'neyyi': 'ghee',
+  'నెయ్యి': 'ghee',
+  'घी': 'ghee',
+  'ತುಪ್ಪ': 'ghee',
 
   // Biscuits variations
   'biskit': 'biscuits',
@@ -118,22 +155,34 @@ export const ACCENT_SLANG_MAP: Record<string, string> = {
   'biscute': 'biscuits',
   'biscutes': 'biscuits',
   'bisket': 'biscuits',
+  'బిస్కెట్లు': 'biscuits',
+  'బిస్కెట్': 'biscuits',
+  'బిస్కట్': 'biscuits',
+  'बिस्कुट': 'biscuits',
+  'बिस्किट': 'biscuits',
+  'ಬಿಸ್ಕತ್ತು': 'biscuits',
   'parley': 'parle-g',
   'parly': 'parle-g',
   'palley': 'parle-g',
   'parleg': 'parle-g',
   'barley': 'parle-g',
+  'పార్లే': 'parle-g',
 
-  // Milk variations
+  // Milk variations (Paalu in Telugu, Doodh in Hindi, Haalu in Kannada)
   'milku': 'milk',
   'melk': 'milk',
   'dudh': 'milk',
   'doodh': 'milk',
   'dudha': 'milk',
   'haalu': 'milk',
+  'halu': 'milk',
   'paal': 'milk',
-  'amul': 'amul milk',
-  'ammul': 'amul milk',
+  'paalu': 'milk',
+  'palu': 'milk',
+  'పాలు': 'milk',
+  'పాల': 'milk',
+  'दूध': 'milk',
+  'ಹಾಲು': 'milk',
 
   // Atta / Flour variations
   'aata': 'atta',
@@ -141,10 +190,16 @@ export const ACCENT_SLANG_MAP: Record<string, string> = {
   'attavu': 'atta',
   'gehun': 'atta',
   'godhuma': 'atta',
+  'pindi': 'atta',
+  'గోధుమ పిండి': 'atta',
+  'పిండి': 'atta',
   'flour': 'atta',
+  'आटा': 'atta',
+  'ಹಿಟ್ಟು': 'atta',
   'ashirvad': 'aashirvaad',
   'ashirwaad': 'aashirvaad',
   'ashirwad': 'aashirvaad',
+  'ఆశీర్వాద్': 'aashirvaad',
 
   // Salt variations
   'solt': 'salt',
@@ -153,8 +208,12 @@ export const ACCENT_SLANG_MAP: Record<string, string> = {
   'saltu': 'salt',
   'namak': 'salt',
   'uppu': 'salt',
+  'ఉప్పు': 'salt',
+  'नमक': 'salt',
+  'ಉಪ್ಪು': 'salt',
   'tatasalt': 'tata salt',
   'tatasolt': 'tata salt',
+  'టాటా': 'tata',
 
   // Bread variations
   'bred': 'bread',
@@ -164,6 +223,10 @@ export const ACCENT_SLANG_MAP: Record<string, string> = {
   'bun': 'bread',
   'pao': 'bread',
   'pav': 'bread',
+  'బ్రెడ్': 'bread',
+  'రొట్టె': 'bread',
+  'ब्रेड': 'bread',
+  'ರೊಟ್ಟಿ': 'bread',
 
   // Drinks variations
   'coke': 'coca-cola',
@@ -171,11 +234,13 @@ export const ACCENT_SLANG_MAP: Record<string, string> = {
   'koka kola': 'coca-cola',
   'coco cola': 'coca-cola',
   'cold drink': 'coca-cola',
+  'కోకాకోలా': 'coca-cola',
   'thumbs up': 'thums up',
   'thumbsup': 'thums up',
   'thumps up': 'thums up',
   'tums up': 'thums up',
   'toofan': 'thums up',
+  'థమ్స్ అప్': 'thums up',
 
   // Detergents variations
   'self excel': 'surf excel',
@@ -185,6 +250,8 @@ export const ACCENT_SLANG_MAP: Record<string, string> = {
   'surf': 'surf excel',
   'sarf': 'surf excel',
   'washing powder': 'surf excel',
+  'సర్ఫ్ ఎక్సెల్': 'surf excel',
+  'సర్ఫ్': 'surf excel',
 
   // Toothpaste variations
   'kolgate': 'colgate',
@@ -195,27 +262,55 @@ export const ACCENT_SLANG_MAP: Record<string, string> = {
   'toothpaste': 'colgate',
   'tooth paste': 'colgate',
   'dant manjan': 'colgate',
+  'కోల్గేట్': 'colgate',
 
   // Soap variations
   'sope': 'soap',
   'soapu': 'soap',
   'sabun': 'soap',
+  'sabbu': 'soap',
+  'సబ్బు': 'soap',
+  'సబ్బులు': 'soap',
+  'साबुन': 'soap',
+  'ಸೋಪು': 'soap',
 
   // Rice / Sugar / Tea
   'chawal': 'rice',
   'biyyam': 'rice',
   'akki': 'rice',
+  'బియ్యం': 'rice',
+  'चावल': 'rice',
+  'ಅಕ್ಕಿ': 'rice',
   'chini': 'sugar',
   'cheeni': 'sugar',
   'sakkare': 'sugar',
   'panchadara': 'sugar',
+  'chakkera': 'sugar',
+  'పంచదార': 'sugar',
+  'చక్కెర': 'sugar',
+  'चीनी': 'sugar',
+  'ಸಕ್ಕರೆ': 'sugar',
   'chai': 'tea',
   'cha': 'tea',
   'tea powder': 'tea',
+  'టీ': 'tea',
+  'టీ పొడి': 'tea',
+  'చాయ్': 'tea',
+  'चाय': 'tea',
+  'ಚಹಾ': 'tea',
+
+  // Packaging words
+  'peket': 'packet',
+  'peketu': 'packet',
+  'peketlu': 'packets',
+  'ప్యాకెట్': 'packet',
+  'ప్యాకెట్లు': 'packets',
+  'पैकेट': 'packet',
+  'ಪ್ಯಾಕೆಟ್': 'packet',
 };
 
 /**
- * Multilingual Numbers & Homophones (handles accents like "tree" for 3, "won/van" for 1, "for" for 4)
+ * Multilingual Numbers & Homophones (English, Telugu, Hindi, Kannada)
  */
 export const PHONETIC_NUMBERS: Record<string, number> = {
   // English words & common accented homophones
@@ -233,17 +328,26 @@ export const PHONETIC_NUMBERS: Record<string, number> = {
   'fifteen': 15, 'twenty': 20, 'twenty five': 25, 'thirty': 30, 'forty': 40, 'fifty': 50,
   'sixty': 60, 'seventy': 70, 'eighty': 80, 'ninety': 90, 'hundred': 100,
 
-  // Hindi numbers
-  'ek': 1, 'do': 2, 'teen': 3, 'tin': 3, 'char': 4, 'chaar': 4, 'paanch': 5, 'panch': 5,
-  'chhe': 6, 'che': 6, 'saat': 7, 'sat': 7, 'aath': 8, 'ath': 8, 'nau': 9, 'das': 10,
-  'gyarah': 11, 'barah': 12, 'pandrah': 15, 'bees': 20, 'pachees': 25, 'tees': 30, 'chalis': 40, 'pachaas': 50, 'sau': 100,
-
-  // Telugu numbers
+  // Telugu numbers (Script & Tanglish)
+  'ఒకటి': 1, 'ఒక': 1, 'ఒకటే': 1, 'రెండు': 2, 'మూడు': 3, 'నాలుగు': 4, 'నాలుగవ': 4,
+  'ఐదు': 5, 'ఆరు': 6, 'ఏడు': 7, 'ఎనిమిది': 8, 'తొమ్మిది': 9, 'పది': 10,
+  'పదకొండు': 11, 'పన్నెండు': 12, 'పదిహేను': 15, 'ఇరవై': 20, 'ముప్పై': 30, 'యాభై': 50, 'వంద': 100,
   'okati': 1, 'oka': 1, 'okate': 1, 'rendu': 2, 'moodu': 3, 'nalugu': 4,
   'aidu': 5, 'eidu': 5, 'aaru': 6, 'yedu': 7, 'elu': 7, 'enimidi': 8, 'tommidi': 9, 'padi': 10,
   'padakondu': 11, 'pennendu': 12, 'padiheynu': 15, 'iravai': 20, 'vanda': 100,
 
-  // Kannada numbers
+  // Hindi numbers (Script & Hinglish)
+  'एक': 1, 'दो': 2, 'तीन': 3, 'चार': 4, 'पांच': 5, 'पाँच': 5,
+  'छह': 6, 'सात': 7, 'आठ': 8, 'नौ': 9, 'दस': 10,
+  'ग्यारह': 11, 'बारह': 12, 'पंद्रह': 15, 'बीस': 20, 'पच्चीस': 25, 'पचास': 50, 'सौ': 100,
+  'ek': 1, 'do': 2, 'teen': 3, 'tin': 3, 'char': 4, 'chaar': 4, 'paanch': 5, 'panch': 5,
+  'chhe': 6, 'che': 6, 'saat': 7, 'sat': 7, 'aath': 8, 'ath': 8, 'nau': 9, 'das': 10,
+  'gyarah': 11, 'barah': 12, 'pandrah': 15, 'bees': 20, 'pachees': 25, 'tees': 30, 'chalis': 40, 'pachaas': 50, 'sau': 100,
+
+  // Kannada numbers (Script & Kanglish)
+  'ಒಂದು': 1, 'ಎರಡು': 2, 'ಮೂರು': 3, 'ನಾಲ್ಕು': 4, 'ಐದು': 5,
+  'ಆರು': 6, 'ಏಳು': 7, 'ಎಂಟು': 8, 'ಒಂಬತ್ತು': 9, 'ಹತ್ತು': 10,
+  'ಹನ್ನೆರಡು': 12, 'ಇಪ್ಪತ್ತು': 20, 'ಐವತ್ತು': 50, 'ನೂರು': 100,
   'ondu': 1, 'ondhu': 1, 'eradu': 2, 'mooru': 3, 'naalku': 4,
   'aivattu': 50, 'hattu': 10, 'ombattu': 9, 'entu': 8, 'nooru': 100
 };
@@ -293,20 +397,28 @@ export function normalizeSlangSpeech(text: string): string {
   normalized = normalized.replace(/\b(?:won|wan|van)\b(?=\s+[a-z])/gi, ' 1 ');
   normalized = normalized.replace(/\b(?:ate|eyt)\b(?=\s+[a-z])/gi, ' 8 ');
 
-  // 3. Convert multi-language number words
+  // 3. Convert multi-language number words (Unicode-safe for Telugu, Hindi, Kannada, and English)
   Object.entries(PHONETIC_NUMBERS)
     .sort((a, b) => b[0].length - a[0].length)
     .forEach(([word, num]) => {
-      const regex = new RegExp(`\\b${word}\\b`, 'gi');
-      normalized = normalized.replace(regex, ` ${num} `);
+      const isAscii = /^[a-z0-9\s-]+$/i.test(word);
+      if (isAscii) {
+        const regex = new RegExp(`\\b${word}\\b`, 'gi');
+        normalized = normalized.replace(regex, ` ${num} `);
+      } else {
+        const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(`(^|\\s|[^a-zA-Z0-9\u0C00-\u0C7F\u0900-\u097F\u0C80-\u0CFF])${escaped}($|\\s|[^a-zA-Z0-9\u0C00-\u0C7F\u0900-\u097F\u0C80-\u0CFF])`, 'g');
+        normalized = normalized.replace(regex, `$1 ${num} $2`);
+      }
     });
 
   // 4. Normalize slang words into canonical retail terminology
   const tokens = normalized.split(/\s+/).filter(Boolean);
   const mappedTokens = tokens.map(token => {
-    const cleanToken = token.replace(/[^a-z0-9-]/gi, '');
+    // Preserve English alphanumeric, hyphens, and Indic script characters (Telugu \u0C00-\u0C7F, Devanagari \u0900-\u097F, Kannada \u0C80-\u0CFF)
+    const cleanToken = token.replace(/[^a-z0-9\-\u0C00-\u0C7F\u0900-\u097F\u0C80-\u0CFF]/gi, '');
     const stripped = stripRegionalSuffixes(cleanToken);
-    return ACCENT_SLANG_MAP[stripped] || ACCENT_SLANG_MAP[cleanToken] || stripped;
+    return ACCENT_SLANG_MAP[cleanToken] || ACCENT_SLANG_MAP[stripped] || stripped;
   });
 
   return mappedTokens.join(' ').replace(/\s+/g, ' ').trim();
@@ -422,6 +534,7 @@ export function extractBestSpeechAlternative(
 /**
  * High-Tolerance Phonetic Product Matcher:
  * Matches any slang, accented, or mispronounced speech query against the shop's REAL inventory products.
+ * Uses Brand-Guard to NEVER substitute different brands (e.g. Gayatri Milk vs Amul Milk).
  */
 export function matchProductPhonetically(
   query: string,
@@ -429,10 +542,25 @@ export function matchProductPhonetically(
 ): { product: Product; matchScore: number; reason: string } | null {
   if (!query || products.length === 0) return null;
 
+  // 1. BRAND-GUARDED MATCHER (Strict Brand Differentiation)
+  const brandGuarded = matchProductWithBrandGuard(query, products);
+  if (brandGuarded.product) {
+    return {
+      product: brandGuarded.product,
+      matchScore: brandGuarded.score,
+      reason: brandGuarded.reason
+    };
+  }
+  // If the user requested a specific brand that is not in inventory, REJECT immediately!
+  // Never substitute a different brand like Amul Milk when the user asked for Gayatri Milk!
+  if (brandGuarded.reason === 'BRAND_MISMATCH_REJECTED') {
+    return null;
+  }
+
   const rawQ = query.toLowerCase().trim();
   const normalizedQ = normalizeSlangSpeech(rawQ);
 
-  // 1. Direct Exact or Substring match on product name
+  // 2. Direct Exact or Substring match on product name
   for (const p of products) {
     const pName = p.name.toLowerCase();
     if (pName === rawQ || pName === normalizedQ) {
@@ -443,55 +571,19 @@ export function matchProductPhonetically(
     }
   }
 
-  // 2. Token-level Substring & Accent Match
-  const qWords = normalizedQ.split(/\s+/).filter(w => w.length > 2 && !['packet', 'packets', 'pack', 'pcs', 'bottle'].includes(w));
-  for (const p of products) {
-    const pTokens = p.name.toLowerCase().split(/\s+/);
-    for (const qw of qWords) {
-      if (pTokens.some(pt => pt === qw || pt.includes(qw) || qw.includes(pt))) {
-        return { product: p, matchScore: 0.85, reason: 'token_match' };
-      }
-    }
-  }
-
-  // 3. Phonetic Soundex Matching (sounds identical to ear)
-  const qSoundexList = qWords.map(w => getSoundex(w));
-  for (const p of products) {
-    const pSoundexList = p.name.toLowerCase().split(/\s+/).map(w => getSoundex(w));
-    for (const qs of qSoundexList) {
-      if (pSoundexList.includes(qs)) {
-        return { product: p, matchScore: 0.80, reason: 'soundex' };
-      }
-    }
-  }
-
-  // 4. Fuzzy Levenshtein Distance Matching (handles spelling variations, slang letters)
+  // 3. Fuzzy Levenshtein Distance Matching
   let bestFuzzyProduct: Product | null = null;
   let highestSim = 0;
 
   for (const p of products) {
-    // Compare full strings
     const fullSim = getLevenshteinSimilarity(normalizedQ, p.name);
     if (fullSim > highestSim) {
       highestSim = fullSim;
       bestFuzzyProduct = p;
     }
-
-    // Compare with each word token
-    const pTokens = p.name.toLowerCase().split(/\s+/);
-    for (const qw of qWords) {
-      for (const pt of pTokens) {
-        const tokenSim = getLevenshteinSimilarity(qw, pt);
-        if (tokenSim > highestSim) {
-          highestSim = tokenSim;
-          bestFuzzyProduct = p;
-        }
-      }
-    }
   }
 
-  // 70% similarity threshold accepts accents and slang while preventing false positives
-  if (bestFuzzyProduct && highestSim >= 0.68) {
+  if (bestFuzzyProduct && highestSim >= 0.72) {
     return { product: bestFuzzyProduct, matchScore: highestSim, reason: 'fuzzy' };
   }
 

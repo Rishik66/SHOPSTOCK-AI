@@ -1,5 +1,6 @@
 import { Product } from '../types';
 import { normalizeSlangSpeech, matchProductPhonetically } from './speechAccentService';
+import { matchProductWithBrandGuard } from './brandProductMatcher';
 
 export interface VoiceBillingItem {
   product: Product;
@@ -15,7 +16,7 @@ export interface VoiceBillingResult {
   outOfStockTerms?: string[];
 }
 
-// Multi-language number word mapper
+// Multi-language number word mapper (English, Hindi, Telugu, Kannada)
 const NUMBER_WORDS: Record<string, number> = {
   // English words & homophones
   'one': 1, 'single': 1, 'won': 1,
@@ -34,26 +35,38 @@ const NUMBER_WORDS: Record<string, number> = {
   'sixty': 60, 'seventy': 70, 'eighty': 80,
   'ninety': 90, 'hundred': 100,
 
-  // Hindi
+  // Hindi (Romanized & Devanagari)
   'ek': 1, 'do': 2, 'teen': 3, 'char': 4, 'paanch': 5,
   'chhe': 6, 'saat': 7, 'aath': 8, 'nau': 9, 'das': 10,
   'gyarah': 11, 'barah': 12, 'pandrah': 15, 'bees': 20,
   'pachees': 25, 'tees': 30, 'chalis': 40, 'pachaas': 50,
   'saath': 60, 'sattar': 70, 'assi': 80, 'nabbe': 90, 'sau': 100,
+  'एक': 1, 'दो': 2, 'तीन': 3, 'चार': 4, 'पांच': 5, 'पाँच': 5,
+  'छह': 6, 'सात': 7, 'आठ': 8, 'नौ': 9, 'दस': 10,
+  'ग्यारह': 11, 'बारह': 12, 'पंद्रह': 15, 'बीस': 20, 'पच्चीस': 25,
+  'तीस': 30, 'चालीस': 40, 'पचास': 50, 'साठ': 60, 'सौ': 100,
 
-  // Telugu
+  // Telugu (Romanized & Telugu Script)
   'okati': 1, 'oka': 1, 'rendu': 2, 'moodu': 3, 'nalugu': 4,
   'aidu': 5, 'aaru': 6, 'yedu': 7, 'enimidi': 8, 'tommidi': 9, 'padi': 10,
   'padakondu': 11, 'pennendu': 12, 'padiheynu': 15, 'iravai': 20,
   'iravai aidu': 25, 'muppai': 30, 'nalabhai': 40, 'yabhai': 50,
   'aravai': 60, 'debbhai': 70, 'yenabhai': 80, 'tombhai': 90, 'vanda': 100,
+  'ఒకటి': 1, 'ఒక': 1, 'రెండు': 2, 'మూడు': 3, 'నాలుగు': 4,
+  'ఐదు': 5, 'ఆరు': 6, 'ఏడు': 7, 'ఎనిమిది': 8, 'తొమ్మిది': 9, 'పది': 10,
+  'పదకొండు': 11, 'పన్నెండు': 12, 'పదిహేను': 15, 'ఇరవై': 20,
+  'ఇరవై ఐదు': 25, 'ముప్పై': 30, 'నలభై': 40, 'యాభై': 50,
+  'అరవై': 60, 'డెబ్బై': 70, 'ఎనభై': 80, 'తొంభై': 90, 'వంద': 100,
 
-  // Kannada
+  // Kannada (Romanized & Kannada Script)
   'ondu': 1, 'ondhu': 1, 'eradu': 2, 'mooru': 3, 'naalku': 4,
   'yelu': 7, 'entu': 8, 'ombattu': 9, 'hattu': 10,
   'hannondu': 11, 'hanneradu': 12, 'hadinaidu': 15, 'ippattu': 20,
   'ippattaidu': 25, 'moovattu': 30, 'nalavattu': 40, 'aivattu': 50,
-  'aravattu': 60, 'eppattu': 70, 'enbattu': 80, 'tombattu': 90, 'nooru': 100
+  'aravattu': 60, 'eppattu': 70, 'enbattu': 80, 'tombattu': 90, 'nooru': 100,
+  'ಒಂದು': 1, 'ಎರಡು': 2, 'ಮೂರು': 3, 'ನಾಲ್ಕು': 4, 'ಐದು': 5,
+  'ಆರು': 6, 'ಏಳು': 7, 'ಎಂಟು': 8, 'ಒಂಬತ್ತು': 9, 'ಹತ್ತು': 10,
+  'ಹನ್ನೆರಡು': 12, 'ಇಪ್ಪತ್ತು': 20, 'ಮೂವತ್ತು': 30, 'ನಲವತ್ತು': 40, 'ಐವತ್ತು': 50, 'ನೂರು': 100
 };
 
 // Packaging and filler terms to strip from product queries
@@ -66,64 +79,60 @@ const NOISE_WORDS = [
   'items', 'item', 'unit', 'units',
   'of', 'in', 'please', 'kripya', 'doyacheyisi', 'dayavittu',
   'chahiye', 'kavali', 'beku', 'hai', 'undi', 'ide',
-  'add', 'jodo', 'seri', 'chalao', 'put', 'daalo', 'veyyi', 'haaku'
+  'add', 'jodo', 'seri', 'chalao', 'put', 'daalo', 'veyyi', 'haaku',
+  'ప్యాకెట్', 'ప్యాకెట్లు', 'బాటిల్', 'డబ్బా', 'కిలో', 'లీటర్'
 ];
 
-// Product name aliases/synonyms for Kirana items
+// Product name aliases/synonyms for Kirana items (Generic categories ONLY; NO hardcoded brand names!)
 const PRODUCT_SYNONYMS: Record<string, string[]> = {
   'biscuit': [
     'biscuits', 'biscuit', 'buiscet', 'buiscets', 'biuscet', 'biuscets', 
-    'biskit', 'biskits', 'biskoot', 'biskut', 'parle', 'parleg', 'parle-g', 
-    'cookies', 'cookie', 'biscutes', 'biscut', 'bisket', 'biskets', 'marie', 
-    'oreo', 'monaco', 'good day', 'bourbon'
+    'biskit', 'biskits', 'biskoot', 'biskut', 'cookies', 'cookie', 
+    'biscutes', 'biscut', 'bisket', 'biskets', 'బిస్కెట్లు', 'బిస్కెట్', 'बिस्कुट', 'ಬಿಸ್ಕತ್ತು'
   ],
   'milk': [
-    'milk', 'milks', 'paal', 'doodh', 'dudh', 'haalu', 'amul milk', 'amul', 
-    'dudha', 'milk packets', 'milk packet', 'nandini', 'mother dairy', 'taaza', 'gold'
+    'milk', 'milks', 'paal', 'paalu', 'palu', 'doodh', 'dudh', 'haalu', 
+    'dudha', 'milk packets', 'milk packet', 'పాలు', 'పాల', 'పాల ప్యాకెట్', 'పాల ప్యాకెట్లు', 'दूध', 'ಹಾಲು'
   ],
   'noodles': [
-    'noodle', 'noodles', 'maggi', 'meggi', 'maggie', 'meggie', '2 minute', 
-    'yippee', 'top ramen', 'wai wai', 'nudles', 'nudle'
+    'noodle', 'noodles', 'nudles', 'nudle', 'నూడుల్స్', 'नूडल्स', 'ನೂಡಲ್ಸ್'
   ],
   'salt': [
-    'salt', 'namak', 'uppu', 'tata', 'tata salt', 'solt', 'sendha namak'
+    'salt', 'namak', 'uppu', 'solt', 'sendha namak', 'ఉప్పు', 'नमक', 'ಉಪ್ಪು'
   ],
   'atta': [
-    'atta', 'aata', 'flour', 'wheat', 'gehun', 'godhuma', 'aashirvaad', 
-    'ashirvad', 'ashirwaad', 'chakki atta'
+    'atta', 'aata', 'flour', 'wheat', 'gehun', 'godhuma', 'pindi', 'chakki atta', 
+    'గోధుమ పిండి', 'పిండి', 'आटा', 'ಹಿಟ್ಟು'
   ],
   'bread': [
-    'bread', 'loaf', 'britannia', 'bun', 'double roti', 'bred', 'pao', 'pav'
+    'bread', 'loaf', 'bun', 'double roti', 'bred', 'pao', 'pav', 'బ్రెడ్', 'రొట్టె', 'ब्रेड', 'ಬ್ರೆಡ್'
   ],
   'coke': [
-    'coca-cola', 'coca cola', 'cocacola', 'coke', 'cold drink', 'soft drink', 
-    'pepsi', 'sprite', 'fanta', 'frooti'
+    'coke', 'cold drink', 'soft drink', 'కూల్ డ్రింక్'
   ],
   'thums up': [
-    'thums up', 'thumbs up', 'thumbsup', 'thumsup', 'thumbs', 'toofan'
+    'thums up', 'thumbs up', 'thumbsup', 'thumsup', 'toofan', 'థమ్స్ అప్'
   ],
   'detergent': [
-    'surf', 'surf excel', 'detergent powder', 'washing powder', 'surfexcel', 
-    'rin', 'tide', 'ariel', 'wheel', 'ghadi'
+    'detergent', 'detergent powder', 'washing powder', 'సర్ఫ్', 'డిటర్జెంట్', 'डिटर्जेंट', 'ಡಿಟರ್ಜೆಂಟ್'
   ],
   'colgate': [
-    'colgate', 'toothpaste', 'paste', 'tooth paste', 'dant manjan', 
-    'pepsodent', 'closeup', 'sensodyne'
+    'toothpaste', 'paste', 'tooth paste', 'dant manjan', 'టూత్‌పేస్ట్', 'పేస్ట్', 'टूथपेस्ट', 'ಟೂತ್ಪೇಸ್ಟ್'
   ],
   'soap': [
-    'soap', 'soaps', 'sabun', 'lifebuoy', 'dettol', 'lux', 'dove', 'santoor'
+    'soap', 'soaps', 'sabun', 'sabbu', 'సబ్బు', 'సబ్బులు', 'साबुन', 'ಸೋಪು'
   ],
   'tea': [
-    'tea', 'chai', 'cha', 'tea powder', 'taj mahal', 'red label', 'tata tea', 'wagh bakri'
+    'tea', 'chai', 'cha', 'tea powder', 'టీ', 'టీ పొడి', 'చాయ్', 'चाय', 'ಚಹಾ'
   ],
   'sugar': [
-    'sugar', 'chini', 'cheeni', 'sakkare', 'panchadara'
+    'sugar', 'chini', 'cheeni', 'sakkare', 'panchadara', 'chakkera', 'పంచదార', 'చక్కెర', 'चीनी', 'ಸಕ್ಕರೆ'
   ],
   'rice': [
-    'rice', 'chawal', 'biyyam', 'akki', 'basmati', 'sona masoori'
+    'rice', 'chawal', 'biyyam', 'akki', 'బియ్యం', 'चावल', 'ಅಕ್ಕಿ'
   ],
   'oil': [
-    'oil', 'tel', 'enne', 'taila', 'cooking oil', 'sunflower oil', 'fortune'
+    'oil', 'tel', 'enne', 'taila', 'cooking oil', 'nune', 'నూనె', 'तेल', 'ಎಣ್ಣೆ'
   ]
 };
 
@@ -173,12 +182,19 @@ function normalizeSpokenText(raw: string): string {
   text = text.replace(/\b(?:tree|free)\b(?=\s+[a-z])/gi, ' 3 ');
   text = text.replace(/\b(?:won|wan)\b(?=\s+[a-z])/gi, ' 1 ');
 
-  // 3. Replace spoken number words with digits (longest words first)
+  // 3. Replace spoken number words with digits (Unicode-safe for Telugu, Hindi, Kannada, English)
   Object.entries(NUMBER_WORDS)
     .sort((a, b) => b[0].length - a[0].length)
     .forEach(([word, num]) => {
-      const regex = new RegExp(`\\b${word}\\b`, 'gi');
-      text = text.replace(regex, ` ${num} `);
+      const isAscii = /^[a-z0-9\s-]+$/i.test(word);
+      if (isAscii) {
+        const regex = new RegExp(`\\b${word}\\b`, 'gi');
+        text = text.replace(regex, ` ${num} `);
+      } else {
+        const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(`(^|\\s|[^a-zA-Z0-9\u0C00-\u0C7F\u0900-\u097F\u0C80-\u0CFF])${escaped}($|\\s|[^a-zA-Z0-9\u0C00-\u0C7F\u0900-\u097F\u0C80-\u0CFF])`, 'g');
+        text = text.replace(regex, `$1 ${num} $2`);
+      }
     });
 
   return text.replace(/\s+/g, ' ').trim();
@@ -199,10 +215,17 @@ function extractRequestedItemName(rawChunk: string): string {
     'i want', 'give me', 'give', 'chahiye', 'kavali', 'beku', 'hai', 'undi', 'ide',
     'to the bill', 'to bill', 'in the bill', 'in bill', 'into bill', 'to the cart', 'to cart', 'in cart',
     'bill me', 'bill mein', 'bill lo', 'bill alli', 'bill', 'cart',
-    'the', 'a', 'an'
+    'the', 'a', 'an',
+    'జోడించు', 'కలపండి', 'వేయి', 'కావాలి', 'బిల్లులో', 'బిల్లు', 'కార్ట్‌లో', 'దయచేసి',
+    'जोड़ो', 'डालो', 'चाहिए', 'बिल में', 'बिल'
   ];
   stripWords.forEach(w => {
-    name = name.replace(new RegExp(`\\b${w}\\b`, 'gi'), ' ');
+    const isAscii = /^[a-z0-9\s-]+$/i.test(w);
+    if (isAscii) {
+      name = name.replace(new RegExp(`\\b${w}\\b`, 'gi'), ' ');
+    } else {
+      name = name.replace(new RegExp(w, 'g'), ' ');
+    }
   });
   return name.replace(/\s+/g, ' ').trim();
 }
@@ -213,29 +236,39 @@ function extractRequestedItemName(rawChunk: string): string {
 function cleanItemPhrase(phrase: string): string {
   let cleaned = phrase.toLowerCase();
   NOISE_WORDS.forEach(noise => {
-    const regex = new RegExp(`\\b${noise}\\b`, 'gi');
-    cleaned = cleaned.replace(regex, ' ');
+    const isAscii = /^[a-z0-9\s-]+$/i.test(noise);
+    if (isAscii) {
+      cleaned = cleaned.replace(new RegExp(`\\b${noise}\\b`, 'gi'), ' ');
+    } else {
+      cleaned = cleaned.replace(new RegExp(noise, 'g'), ' ');
+    }
   });
   return cleaned.replace(/\s+/g, ' ').trim();
 }
 
 /**
  * Strictly searches for matching product from user's ACTUAL inventory (products).
- * NEVER falls back to external/dummy catalogs for billing.
+ * Uses Brand-Guard so "Gayatri Milk" NEVER matches "Amul Milk"!
  */
 function matchProductInInventory(queryText: string, products: Product[]): Product | null {
   const cleanQ = queryText.toLowerCase().trim();
   if (!cleanQ || products.length === 0) return null;
 
-  // 1. Direct match on product name or category
-  const directMatch = products.find(p => 
-    p.name.toLowerCase() === cleanQ ||
-    p.name.toLowerCase().includes(cleanQ) ||
-    cleanQ.includes(p.name.toLowerCase())
-  );
-  if (directMatch) return directMatch;
+  // 1. BRAND-GUARD MATCH FIRST (Absolute brand differentiation)
+  const brandGuarded = matchProductWithBrandGuard(cleanQ, products);
+  if (brandGuarded.product) {
+    return brandGuarded.product;
+  }
+  // If the user specified a brand that is absent or conflicts with inventory, DO NOT match another brand!
+  if (brandGuarded.reason === 'BRAND_MISMATCH_REJECTED') {
+    return null;
+  }
 
-  // 2. Check synonyms against actual inventory products
+  // 2. Direct exact match on product name
+  const exactMatch = products.find(p => p.name.toLowerCase() === cleanQ);
+  if (exactMatch) return exactMatch;
+
+  // 3. Check generic synonyms ONLY if no brand conflict
   for (const [key, aliases] of Object.entries(PRODUCT_SYNONYMS)) {
     if (cleanQ.includes(key) || aliases.some(alias => cleanQ.includes(alias) || alias.includes(cleanQ))) {
       const synMatch = products.find(p => {
@@ -247,21 +280,18 @@ function matchProductInInventory(queryText: string, products: Product[]): Produc
     }
   }
 
-  // 3. Token-based word match (length >= 3)
-  const qTokens = cleanQ.split(/\s+/).filter(w => w.length >= 3 && !NOISE_WORDS.includes(w));
-  for (const token of qTokens) {
-    const tokenMatch = products.find(p => 
-      p.name.toLowerCase().includes(token) || 
-      p.category.toLowerCase().includes(token)
-    );
-    if (tokenMatch) return tokenMatch;
-  }
-
-  // 4. Phonetic Soundex and fuzzy similarity match (handles regional Indian accents & slang)
+  // 4. Phonetic Soundex and fuzzy similarity match
   const phoneticMatch = matchProductPhonetically(cleanQ, products);
   if (phoneticMatch) {
     return phoneticMatch.product;
   }
+
+  // 5. Prefix or boundary match (ONLY if no brand conflict)
+  const directMatch = products.find(p => 
+    p.name.toLowerCase().startsWith(cleanQ) || 
+    cleanQ.startsWith(p.name.toLowerCase())
+  );
+  if (directMatch) return directMatch;
 
   return null;
 }
@@ -303,7 +333,7 @@ export function parseVoiceBillingCommand(
     'give bill', 'give me the bill', 'give the bill', 'print bill', 'complete bill',
     'make bill', 'create bill', 'generate bill', 'finish bill', 'checkout', 'done billing',
     'bill do', 'bill banao', 'bill dedo', 'bill ivvu', 'bill kodi', 'bill cheyi',
-    'bill ready', 'print receipt', 'give receipt'
+    'bill ready', 'print receipt', 'give receipt', 'బిల్లు ఇవ్వండి', 'బిల్లు చెయ్యి', 'రసీదు'
   ];
 
   const shouldCompleteBill = billKeywords.some(keyword => normalized.includes(keyword));
@@ -323,12 +353,12 @@ export function parseVoiceBillingCommand(
   // Remove the bill completion phrase from the item parsing string
   let itemsStringToParse = normalized;
   billKeywords.forEach(k => {
-    itemsStringToParse = itemsStringToParse.replace(new RegExp(`\\b${k}\\b`, 'gi'), ' ');
+    itemsStringToParse = itemsStringToParse.replace(new RegExp(k, 'gi'), ' ');
   });
 
   // Split on conjunctions: 'and', 'aur', 'mariyu', 'mattu', commas, plus
   const rawSegments = itemsStringToParse
-    .split(/(?:\band\b|\baur\b|\bmariyu\b|\bmattu\b|,|\+|\&)/gi)
+    .split(/(?:\band\b|\baur\b|\bmariyu\b|\bmattu\b|,|\+|\&|మరియు|మరియును|औ|ఔర్)/gi)
     .map(s => s.trim())
     .filter(Boolean);
 
@@ -356,8 +386,19 @@ export function parseVoiceBillingCommand(
 
     if (!requestedName && !cleanedQuery) return;
 
+    // First check Brand-Guard to catch brand mismatch immediately
+    const guardCheck = matchProductWithBrandGuard(cleanedQuery || requestedName, products);
+    if (guardCheck.reason === 'BRAND_MISMATCH_REJECTED') {
+      const descriptiveMsg = guardCheck.feedback || `"${requestedName || cleanedQuery}" is not in your inventory`;
+      if (!missingItems.includes(descriptiveMsg)) {
+        missingItems.push(descriptiveMsg);
+      }
+      return;
+    }
+
     // Query inventory using cleaned token first, then requestedName
-    const matchedProduct = matchProductInInventory(cleanedQuery || requestedName, products) ||
+    const matchedProduct = guardCheck.product ||
+                           matchProductInInventory(cleanedQuery || requestedName, products) ||
                            matchProductInInventory(requestedName, products);
 
     if (matchedProduct) {
@@ -386,7 +427,7 @@ export function parseVoiceBillingCommand(
     rawSegments.forEach(seg => processChunk(seg));
   } else {
     // If not separated by "and", check if string contains multiple numbers: e.g. "2 biscuits 3 milk"
-    const multiItemPattern = /(\d+\s+[a-zA-Z\s-]+?)(?=\b\d+\s+[a-zA-Z]|$)/g;
+    const multiItemPattern = /(\d+\s+[^\d]+?)(?=\s*\d+\s+|$)/g;
     const matches = itemsStringToParse.match(multiItemPattern);
 
     if (matches && matches.length > 1) {
@@ -413,20 +454,24 @@ export function parseVoiceBillingCommand(
       let feedback = '';
       if (missingItems.length === 1) {
         const item = missingItems[0];
-        const isPlural = item.endsWith('s');
-        const verb = isPlural ? 'are no' : 'is no';
-        if (language === 'te' || language === 'te-IN') {
-          feedback = `ఇన్వెంటరీలో ${item} లేదు.`;
-        } else if (language === 'hi' || language === 'hi-IN') {
-          feedback = `इन्वेंटरी में कोई ${item} नहीं है।`;
-        } else if (language === 'kn' || language === 'kn-IN') {
-          feedback = `ಇನ್ವೆಂಟರಿಯಲ್ಲಿ ${item} ಇಲ್ಲ.`;
+        if (item.includes('not in your inventory') || item.includes('లేదు') || item.includes('नहीं है')) {
+          feedback = item;
         } else {
-          feedback = `There ${verb} ${item} in the inventory.`;
+          const isPlural = item.endsWith('s');
+          const verb = isPlural ? 'are no' : 'is no';
+          if (language === 'te' || language === 'te-IN') {
+            feedback = `ఇన్వెంటరీలో ${item} లేదు.`;
+          } else if (language === 'hi' || language === 'hi-IN') {
+            feedback = `इन्वेंटरी में कोई ${item} नहीं है।`;
+          } else if (language === 'kn' || language === 'kn-IN') {
+            feedback = `ಇನ್ವೆಂಟರಿಯಲ್ಲಿ ${item} ಇಲ್ಲ.`;
+          } else {
+            feedback = `There ${verb} ${item} in the inventory.`;
+          }
         }
       } else {
-        const itemsList = missingItems.join(' or ');
-        feedback = `There is no ${itemsList} in the inventory.`;
+        const itemsList = missingItems.join('; ');
+        feedback = `Items not available in inventory: ${itemsList}.`;
       }
 
       return {
