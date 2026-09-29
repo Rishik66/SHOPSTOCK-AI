@@ -16,13 +16,19 @@ import {
   Key, 
   Database,
   Calendar,
-  AlertCircle
+  AlertCircle,
+  Sparkles,
+  Bot,
+  Eye,
+  EyeOff,
+  ExternalLink
 } from 'lucide-react';
 import { useApp, DEMO_USER } from '../context/AppContext';
 import { tr } from '../i18n';
 import { Language } from '../types';
 import { SupabaseModal } from '../components/SupabaseModal';
 import { isSupabaseConfigured } from '../services/supabaseClient';
+import { getGeminiApiKey, setGeminiApiKey, isRealAIConfigured, testGeminiApiKey } from '../services/aiService';
 
 export function Settings() {
   const { 
@@ -43,6 +49,54 @@ export function Settings() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatusMsg, setSyncStatusMsg] = useState<{ text: string; success: boolean } | null>(null);
   const [showConfigModal, setShowConfigModal] = useState(false);
+
+  // Real AI (Gemini) State
+  const [geminiKeyInput, setGeminiKeyInput] = useState<string>(getGeminiApiKey());
+  const [showGeminiKey, setShowGeminiKey] = useState<boolean>(false);
+  const [testingGemini, setTestingGemini] = useState<boolean>(false);
+  const [geminiStatusMsg, setGeminiStatusMsg] = useState<{ text: string; success: boolean } | null>(null);
+  const [isGeminiActive, setIsGeminiActive] = useState<boolean>(isRealAIConfigured());
+
+  const handleSaveGeminiKey = async () => {
+    const clean = geminiKeyInput.trim();
+    if (!clean) {
+      setGeminiApiKey('');
+      setIsGeminiActive(false);
+      setGeminiStatusMsg({
+        text: 'Gemini API key removed. Reverted to Smart Retail AI Engine.',
+        success: true
+      });
+      setTimeout(() => setGeminiStatusMsg(null), 5000);
+      return;
+    }
+
+    setTestingGemini(true);
+    setGeminiStatusMsg(null);
+
+    try {
+      const testRes = await testGeminiApiKey(clean);
+      if (testRes.success) {
+        setGeminiApiKey(clean);
+        setIsGeminiActive(true);
+        setGeminiStatusMsg({
+          text: '✅ Google Gemini Real-Time AI connected successfully! Your assistant will now answer any question with live analysis.',
+          success: true
+        });
+      } else {
+        setGeminiStatusMsg({
+          text: `❌ ${testRes.message}`,
+          success: false
+        });
+      }
+    } catch (err: any) {
+      setGeminiStatusMsg({
+        text: `❌ Connection error: ${err?.message || 'Check network connection'}`,
+        success: false
+      });
+    } finally {
+      setTestingGemini(false);
+    }
+  };
 
   const handleManualSync = async () => {
     setIsSyncing(true);
@@ -268,7 +322,120 @@ export function Settings() {
         </div>
       </div>
 
-      {/* SECTION 2: LANGUAGE SELECTION */}
+      {/* SECTION 2: REAL-TIME AI CHATBOT & GOOGLE GEMINI ENGINE */}
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-xs overflow-hidden">
+        <div className="p-5 sm:p-6 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
+              <Sparkles size={20} />
+            </div>
+            <div>
+              <h2 className="text-base sm:text-lg font-bold text-gray-900 flex items-center gap-2">
+                <span>Real-Time AI Assistant Engine (Google Gemini)</span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
+                  isGeminiActive ? 'bg-purple-100 text-purple-800' : 'bg-slate-100 text-slate-700'
+                }`}>
+                  {isGeminiActive ? 'Gemini Live Active' : 'Smart Retail Engine'}
+                </span>
+              </h2>
+              <p className="text-xs sm:text-sm text-gray-500">
+                Sync with real AI to enable open conversational chatting, live sales analysis, and customized growth ideas.
+              </p>
+            </div>
+          </div>
+
+          <a
+            href="https://aistudio.google.com/app/apikey"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 text-xs font-bold text-purple-700 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+          >
+            <span>Get Free API Key</span>
+            <ExternalLink size={13} />
+          </a>
+        </div>
+
+        <div className="p-5 sm:p-6 space-y-4">
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 text-xs sm:text-sm text-slate-700 space-y-2">
+            <div className="font-bold text-slate-900 flex items-center gap-2">
+              <Bot size={16} className="text-purple-600" />
+              <span>How Real AI Sync Works in ShopStock AI:</span>
+            </div>
+            <ul className="list-disc pl-5 space-y-1 text-slate-600 text-xs sm:text-sm">
+              <li><strong>Open-Ended Conversations:</strong> Ask anything—not just fixed commands, but advice, explanations, and customer strategies.</li>
+              <li><strong>Deep Sales & Data Analysis:</strong> The AI examines your real-time stock levels, today's sales, and slow-moving products to recommend bundle combos and pricing.</li>
+              <li><strong>Fluent Multilingual Voice:</strong> Speaks and understands Telugu, Hindi, Kannada, and English.</li>
+              <li><strong>100% Free:</strong> Google Gemini provides a free tier with no credit card required.</li>
+            </ul>
+          </div>
+
+          {/* API Key Form */}
+          <div className="space-y-2">
+            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
+              Google Gemini API Key
+            </label>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+              <div className="relative flex-1">
+                <input
+                  type={showGeminiKey ? 'text' : 'password'}
+                  value={geminiKeyInput}
+                  onChange={(e) => setGeminiKeyInput(e.target.value)}
+                  placeholder="Paste your Gemini API key (AIzaSy...)"
+                  className="w-full bg-slate-50 border border-gray-300 text-gray-900 text-sm rounded-xl focus:ring-2 focus:ring-purple-600 focus:bg-white p-3 pr-10 outline-none font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowGeminiKey(!showGeminiKey)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1 cursor-pointer"
+                >
+                  {showGeminiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSaveGeminiKey}
+                  disabled={testingGemini}
+                  className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-sm shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw size={15} className={testingGemini ? 'animate-spin' : ''} />
+                  <span>{testingGemini ? 'Verifying...' : 'Save & Test Key'}</span>
+                </button>
+
+                {isGeminiActive && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGeminiKeyInput('');
+                      setGeminiApiKey('');
+                      setIsGeminiActive(false);
+                      setGeminiStatusMsg({ text: 'Reverted to Built-in Smart Retail AI Engine.', success: true });
+                    }}
+                    className="px-3 py-3 rounded-xl border border-gray-300 text-gray-600 hover:bg-gray-100 text-xs font-bold transition-all cursor-pointer"
+                  >
+                    Clear Key
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Test Status Feedback */}
+          {geminiStatusMsg && (
+            <div className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 border ${
+              geminiStatusMsg.success 
+                ? 'bg-purple-50 text-purple-900 border-purple-200' 
+                : 'bg-rose-50 text-rose-900 border-rose-200'
+            }`}>
+              {geminiStatusMsg.success ? <Check size={16} className="text-purple-600 shrink-0" /> : <AlertCircle size={16} className="text-rose-600 shrink-0" />}
+              <span>{geminiStatusMsg.text}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* SECTION 3: LANGUAGE SELECTION */}
       <div className="bg-white rounded-2xl border border-gray-200 shadow-xs overflow-hidden">
         <div className="p-5 sm:p-6 border-b border-gray-100">
           <div className="flex items-center gap-3">

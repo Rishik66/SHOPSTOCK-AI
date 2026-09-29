@@ -3,10 +3,10 @@ import { Send, Mic, Bot, User, CheckCircle, XCircle, Volume2, Globe, AlertCircle
 import { useApp } from '../context/AppContext';
 import { tr } from '../i18n';
 import { AIMessage, AIAction } from '../types';
-import { processQuery } from '../services/aiService';
+import { processQuery, isRealAIConfigured } from '../services/aiService';
 
 export function AIAssistant() {
-  const { products, setProducts, transactions, language, addNotification, currentUser } = useApp();
+  const { products, setProducts, transactions, language, addNotification, currentUser, setCurrentPage } = useApp();
   
   const [messages, setMessages] = useState<AIMessage[]>([]);
   const [input, setInput] = useState('');
@@ -105,7 +105,7 @@ export function AIAssistant() {
     }
   };
 
-  const handleSend = (text: string) => {
+  const handleSend = async (text: string) => {
     if (!text.trim()) return;
     
     const userMsg: AIMessage = {
@@ -119,8 +119,16 @@ export function AIAssistant() {
     setPendingAction(null);
     setThinking(true);
 
-    setTimeout(() => {
-      const response = processQuery(text.trim(), products, transactions, language);
+    try {
+      const historySnapshot = messages.slice(-5).map(m => ({ role: m.role, text: m.text }));
+      const response = await processQuery(
+        text.trim(), 
+        products, 
+        transactions, 
+        language, 
+        currentUser, 
+        historySnapshot
+      );
       
       const aiMsg: AIMessage = {
         id: Date.now().toString() + 'ai',
@@ -130,13 +138,23 @@ export function AIAssistant() {
       };
       
       setMessages(prev => [...prev, aiMsg]);
-      setThinking(false);
       speak(response.text);
 
       if (response.action) {
         setPendingAction(response.action);
       }
-    }, 450);
+    } catch (err: any) {
+      console.warn("AI processing error:", err);
+      const fallbackMsg: AIMessage = {
+        id: Date.now().toString() + 'ai-err',
+        role: 'assistant',
+        text: "I encountered a minor issue processing your request. Please try again or check your query.",
+        timestamp: new Date().toISOString()
+      };
+      setMessages(prev => [...prev, fallbackMsg]);
+    } finally {
+      setThinking(false);
+    }
   };
 
   const startVoice = () => {
@@ -334,11 +352,11 @@ export function AIAssistant() {
   };
 
   const suggestions = [
-    "Which products are in stock?",
+    "📊 How to improve sales?",
+    "💡 Analyze sales & suggest growth ideas",
     "Which products are low in stock?",
     "What should I restock?",
     "How much did I sell today?",
-    "Today's profit?",
     "Best selling products"
   ];
 
@@ -358,13 +376,29 @@ export function AIAssistant() {
               </span>
             </h2>
             <p className="text-xs text-gray-500">
-              Ask about stock, sales, profits, or speak voice commands to update stock
+              Real-time shop assistant: Ask for sales improvement ideas, stock analysis, or speak voice commands
             </p>
           </div>
         </div>
 
-        {/* Controls: Voice Language + Mic Hardware Diagnostic */}
-        <div className="flex items-center gap-2">
+        {/* Controls: AI Engine + Voice Language + Mic Hardware Diagnostic */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* AI Engine Status Button */}
+          <button
+            type="button"
+            onClick={() => setCurrentPage('settings')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+              isRealAIConfigured()
+                ? 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100'
+                : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+            }`}
+            title="Click to configure Real-Time Google Gemini AI in Settings"
+          >
+            <Sparkles size={13} className={isRealAIConfigured() ? 'text-purple-600' : 'text-emerald-600'} />
+            <span className="hidden sm:inline">{isRealAIConfigured() ? 'Google Gemini Live' : 'Smart Retail AI Engine'}</span>
+            <span className="sm:hidden">{isRealAIConfigured() ? 'Gemini' : 'Smart AI'}</span>
+          </button>
+
           {/* Hardware Diagnostic Button */}
           <button
             type="button"
@@ -374,7 +408,7 @@ export function AIAssistant() {
             title="Test if your physical microphone is receiving sound"
           >
             <Activity size={14} className={testingMic ? 'text-red-500 animate-spin' : 'text-blue-600'} />
-            <span>{testingMic ? 'Testing Mic...' : 'Test Mic Hardware'}</span>
+            <span className="hidden sm:inline">{testingMic ? 'Testing Mic...' : 'Test Mic'}</span>
           </button>
 
           {/* Voice Language Selector */}
