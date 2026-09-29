@@ -8,7 +8,7 @@ import { useApp } from '../context/AppContext';
 import { tr } from '../i18n';
 import { Product } from '../types';
 import { parseVoiceInventoryCommand, VoiceStockChange } from '../services/voiceInventoryService';
-import { extractBestSpeechAlternative, normalizeSlangSpeech } from '../services/speechAccentService';
+import { extractBestSpeechAlternative, normalizeSlangSpeech, cleanTextForSpeech } from '../services/speechAccentService';
 import { BarcodeScannerModal } from '../components/BarcodeScannerModal';
 import { generateEAN13Barcode } from '../services/barcodeService';
 
@@ -64,9 +64,15 @@ export function Inventory() {
     if (!window.speechSynthesis) return;
     try {
       window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1.0;
-      window.speechSynthesis.speak(utterance);
+      setTimeout(() => {
+        try {
+          const cleaned = cleanTextForSpeech(text, voiceLang || 'en-IN');
+          const utterance = new SpeechSynthesisUtterance(cleaned || text);
+          utterance.lang = voiceLang || 'en-IN';
+          utterance.rate = 1.0;
+          window.speechSynthesis.speak(utterance);
+        } catch {}
+      }, 50);
     } catch {}
   };
 

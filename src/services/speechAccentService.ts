@@ -589,3 +589,64 @@ export function matchProductPhonetically(
 
   return null;
 }
+
+/**
+ * Strips markdown, emojis, asterisks, bullet points, action tags, and translates currency symbols
+ * into clean, natural conversational text suitable for browser text-to-speech synthesis (TTS).
+ */
+export function cleanTextForSpeech(text: string, lang: string = 'en'): string {
+  if (!text) return '';
+
+  let cleaned = text;
+
+  // 1. Remove [ACTION: ...] tags
+  cleaned = cleaned.replace(/\[ACTION:\s*[\s\S]*?\]/gi, '');
+
+  // 2. Remove URLs
+  cleaned = cleaned.replace(/https?:\/\/\S+/gi, '');
+
+  // 3. Remove parenthetical tips like *(💡 Tip: ...)*
+  cleaned = cleaned.replace(/\(\s*💡[^\)]*\)/gi, '');
+  cleaned = cleaned.replace(/\(\s*Pro-Tip:[^\)]*\)/gi, '');
+  cleaned = cleaned.replace(/\(\s*Tip:[^\)]*\)/gi, '');
+
+  // 4. Remove markdown bold, italic, strikethrough, headers, and code
+  cleaned = cleaned.replace(/#{1,6}\s+/g, '');
+  cleaned = cleaned.replace(/\*\*(.*?)\*\*/g, '$1');
+  cleaned = cleaned.replace(/\*(.*?)\*/g, '$1');
+  cleaned = cleaned.replace(/__(.*?)__/g, '$1');
+  cleaned = cleaned.replace(/_(.*?)_/g, '$1');
+  cleaned = cleaned.replace(/~~(.*?)~~/g, '$1');
+  cleaned = cleaned.replace(/`([^`]+)`/g, '$1');
+
+  // 5. Replace Rupee symbol (₹) or 'Rs.' with spoken words based on language
+  const rupeePattern = /(?:₹|Rs\.?)\s*([\d,]+(?:\.\d+)?)/gi;
+  if (lang.startsWith('te')) {
+    cleaned = cleaned.replace(rupeePattern, (_m, val) => `${val.replace(/,/g, '')} రూపాయలు`);
+  } else if (lang.startsWith('hi')) {
+    cleaned = cleaned.replace(rupeePattern, (_m, val) => `${val.replace(/,/g, '')} रुपये`);
+  } else if (lang.startsWith('kn')) {
+    cleaned = cleaned.replace(rupeePattern, (_m, val) => `${val.replace(/,/g, '')} ರೂಪಾಯಿ`);
+  } else {
+    cleaned = cleaned.replace(rupeePattern, (_m, val) => `${val.replace(/,/g, '')} rupees`);
+  }
+
+  // 6. Remove bullet characters, numbering prefixes, and blockquotes
+  cleaned = cleaned.replace(/^[ \t]*[•\-\*\>][ \t]+/gm, '');
+  cleaned = cleaned.replace(/^[ \t]*\d+\.[ \t]+/gm, '');
+  cleaned = cleaned.replace(/[|]/g, ', ');
+  cleaned = cleaned.replace(/—|--/g, ', ');
+
+  // 7. Remove decorative symbols and emojis
+  cleaned = cleaned.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '');
+
+  // 8. Strip any remaining rogue markdown tokens (*, _, #)
+  cleaned = cleaned.replace(/[*_#~]/g, '');
+
+  // 9. Normalize spacing and punctuation pauses
+  cleaned = cleaned.replace(/\n+/g, '. ');
+  cleaned = cleaned.replace(/\.{2,}/g, '.');
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+
+  return cleaned;
+}

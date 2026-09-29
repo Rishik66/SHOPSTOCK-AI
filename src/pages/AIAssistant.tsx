@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Mic, Bot, User, CheckCircle, XCircle, Volume2, Globe, AlertCircle, Sparkles, StopCircle, Check, HelpCircle, Activity } from 'lucide-react';
+import { Send, Mic, Bot, User, CheckCircle, XCircle, Volume2, VolumeX, Globe, AlertCircle, Sparkles, StopCircle, Check, HelpCircle, Activity } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { tr } from '../i18n';
 import { AIMessage, AIAction } from '../types';
 import { processQuery, isRealAIConfigured } from '../services/aiService';
-import { extractBestSpeechAlternative, normalizeSlangSpeech } from '../services/speechAccentService';
+import { extractBestSpeechAlternative, normalizeSlangSpeech, cleanTextForSpeech } from '../services/speechAccentService';
 import { GeminiModal } from '../components/GeminiModal';
 
 export function AIAssistant() {
@@ -22,6 +22,11 @@ export function AIAssistant() {
     language === 'te' ? 'te-IN' : language === 'hi' ? 'hi-IN' : language === 'kn' ? 'kn-IN' : 'en-IN'
   );
 
+  // Text-To-Speech (Auto-Speak Aloud) State
+  const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
+  const [autoSpeak, setAutoSpeak] = useState<boolean>(true);
+  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
+
   // Mic Hardware Diagnostic Test State
   const [testingMic, setTestingMic] = useState<boolean>(false);
   const [testVolume, setTestVolume] = useState<number>(0);
@@ -37,11 +42,35 @@ export function AIAssistant() {
   const silenceTimerRef = useRef<any>(null);
   const isListeningRef = useRef<boolean>(false);
 
+  // Speech Synthesis Engine References
+  const isSpeakingRef = useRef<boolean>(false);
+  const speechCancelTimeoutRef = useRef<any>(null);
+  const keepAliveIntervalRef = useRef<any>(null);
+  const availableVoicesRef = useRef<SpeechSynthesisVoice[]>([]);
+
   const getSR = () => {
     return (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
   };
 
   const srSupported = !!getSR();
+
+  // Populate and prime browser voices
+  useEffect(() => {
+    const updateVoices = () => {
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        availableVoicesRef.current = window.speechSynthesis.getVoices();
+      }
+    };
+    updateVoices();
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.onvoiceschanged = updateVoices;
+    }
+    return () => {
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.onvoiceschanged = null;
+      }
+    };
+  }, []);
 
   // Match voice locale to UI language by default
   useEffect(() => {
@@ -67,21 +96,207 @@ export function AIAssistant() {
   useEffect(() => {
     return () => {
       stopVoice();
+      stopSpeaking();
     };
   }, []);
 
-  const speak = (text: string) => {
-    if (!window.speechSynthesis) return;
-    try {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      const langMap: Record<string, string> = { en: 'en-IN', te: 'te-IN', hi: 'hi-IN', kn: 'kn-IN' };
-      utterance.lang = selectedVoiceLang || langMap[language] || 'en-IN';
-      utterance.rate = 1.0;
-      window.speechSynthesis.speak(utterance);
-    } catch (e) {
-      console.warn("TTS error:", e);
+  // Stop speech synthesis & cancel all timers
+  const stopSpeaking = () => {
+    isSpeakingRef.current = false;
+    setIsSpeaking(false);
+    setSpeakingMessageId(null);
+
+    if (keepAliveIntervalRef.current) {
+      clearInterval(keepAliveIntervalRef.current);
+      keepAliveIntervalRef.current = null;
     }
+    if (speechCancelTimeoutRef.current) {
+      clearTimeout(speechCancelTimeoutRef.current);
+      speechCancelTimeoutRef.current = null;
+    }
+
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch (e) {
+        console.warn("TTS cancel error:", e);
+      }
+    }
+  };
+
+  // Splits long text into conversational chunks (<=160 chars) to prevent Chrome's 15s freeze bug
+  const splitIntoSpeechChunks = (text: string): string[] => {
+    if (!text) return [];
+    const rawSentences = text.split(/(?<=[.?!;:\n])\s+/);
+    const chunks: string[] = [];
+
+    for (const sentence of rawSentences) {
+      const trimmed = sentence.trim();
+      if (!trimmed) continue;
+
+      if (trimmed.length <= 160) {
+        chunks.push(trimmed);
+      } else {
+        const parts = trimmed.split(/(?<=[,])\s+/);
+        let temp = '';
+        for (const part of parts) {
+          if ((temp + ' ' + part).trim().length <= 160) {
+            temp = temp ? `${temp} ${part}` : part;
+          } else {
+            if (temp) chunks.push(temp.trim());
+            if (part.length > 160) {
+              const words = part.split(' ');
+              let wordChunk = '';
+              for (const w of words) {
+                if ((wordChunk + ' ' + w).length <= 160) {
+                  wordChunk = wordChunk ? `${wordChunk} ${w}` : w;
+                } else {
+                  if (wordChunk) chunks.push(wordChunk.trim());
+                  wordChunk = w;
+                }
+              }
+              if (wordChunk) temp = wordChunk;
+              else temp = '';
+            } else {
+              temp = part;
+            }
+          }
+        }
+        if (temp.trim()) {
+          chunks.push(temp.trim());
+        }
+      }
+    }
+
+    return chunks.length > 0 ? chunks : [text];
+  };
+
+  // Finds the best matched browser voice for the selected language
+  const findBestVoice = (targetLang: string): SpeechSynthesisVoice | null => {
+    const voices = availableVoicesRef.current.length > 0
+      ? availableVoicesRef.current
+      : (typeof window !== 'undefined' && window.speechSynthesis ? window.speechSynthesis.getVoices() : []);
+    
+    if (!voices || voices.length === 0) return null;
+
+    const targetLower = targetLang.toLowerCase();
+    const langCode = targetLower.split('-')[0];
+
+    // 1. Exact match (e.g. 'te-in')
+    let match = voices.find(v => v.lang.toLowerCase() === targetLower || v.lang.toLowerCase().replace('_', '-') === targetLower);
+    if (match) return match;
+
+    // 2. Language prefix with 'india' or 'in'
+    match = voices.find(v => v.lang.toLowerCase().startsWith(langCode) && (v.lang.toLowerCase().includes('in') || v.name.toLowerCase().includes('india')));
+    if (match) return match;
+
+    // 3. Any voice matching language code (e.g. starts with 'te', 'hi', 'kn', 'en')
+    match = voices.find(v => v.lang.toLowerCase().startsWith(langCode));
+    if (match) return match;
+
+    // 4. If English, prefer Indian English voice
+    if (langCode === 'en') {
+      match = voices.find(v => v.name.toLowerCase().includes('india') || v.lang.toLowerCase().includes('en-in'));
+      if (match) return match;
+    }
+
+    return null;
+  };
+
+  // Keep-alive timer prevents Chrome from pausing synthesis after 15 seconds
+  const startKeepAlive = () => {
+    if (keepAliveIntervalRef.current) clearInterval(keepAliveIntervalRef.current);
+    keepAliveIntervalRef.current = setInterval(() => {
+      if (typeof window !== 'undefined' && window.speechSynthesis && isSpeakingRef.current) {
+        try {
+          window.speechSynthesis.pause();
+          window.speechSynthesis.resume();
+        } catch {}
+      }
+    }, 7000);
+  };
+
+  // Speaks clean text aloud sequentially
+  const speak = (rawText: string, messageId?: string, force: boolean = false) => {
+    if (!force && !autoSpeak) return;
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+
+    // Do not speak if microphone voice recognition is active
+    if (isListeningRef.current) return;
+
+    // Stop ongoing speech
+    stopSpeaking();
+
+    // 60ms buffer to allow Chrome's async cancel to finish
+    speechCancelTimeoutRef.current = setTimeout(() => {
+      try {
+        const targetLang = selectedVoiceLang || (
+          language === 'te' ? 'te-IN' :
+          language === 'hi' ? 'hi-IN' :
+          language === 'kn' ? 'kn-IN' : 'en-IN'
+        );
+
+        const cleaned = cleanTextForSpeech(rawText, targetLang);
+        if (!cleaned || !cleaned.trim()) return;
+
+        const chunks = splitIntoSpeechChunks(cleaned);
+        if (chunks.length === 0) return;
+
+        isSpeakingRef.current = true;
+        setIsSpeaking(true);
+        setSpeakingMessageId(messageId || null);
+
+        startKeepAlive();
+
+        const bestVoice = findBestVoice(targetLang);
+
+        const playChunk = (index: number) => {
+          if (!isSpeakingRef.current || index >= chunks.length) {
+            stopSpeaking();
+            return;
+          }
+
+          const utterance = new SpeechSynthesisUtterance(chunks[index]);
+          utterance.lang = targetLang;
+          utterance.rate = 1.0;
+          utterance.pitch = 1.0;
+          if (bestVoice) {
+            utterance.voice = bestVoice;
+          }
+
+          utterance.onend = () => {
+            if (isSpeakingRef.current) {
+              if (index + 1 < chunks.length) {
+                playChunk(index + 1);
+              } else {
+                stopSpeaking();
+              }
+            }
+          };
+
+          utterance.onerror = (event: any) => {
+            if (event.error === 'interrupted' || event.error === 'canceled') {
+              return;
+            }
+            console.warn("Speech chunk error:", event.error);
+            if (isSpeakingRef.current) {
+              if (index + 1 < chunks.length) {
+                playChunk(index + 1);
+              } else {
+                stopSpeaking();
+              }
+            }
+          };
+
+          window.speechSynthesis.speak(utterance);
+        };
+
+        playChunk(0);
+      } catch (err) {
+        console.warn("Speech synthesis error:", err);
+        stopSpeaking();
+      }
+    }, 60);
   };
 
   const stopVoice = (shouldSend: boolean = false) => {
@@ -146,7 +361,7 @@ export function AIAssistant() {
       };
       
       setMessages(prev => [...prev, aiMsg]);
-      speak(response.text);
+      speak(response.text, aiMsg.id);
 
       if (response.action) {
         setPendingAction(response.action);
@@ -160,12 +375,14 @@ export function AIAssistant() {
         timestamp: new Date().toISOString()
       };
       setMessages(prev => [...prev, fallbackMsg]);
+      speak(fallbackMsg.text, fallbackMsg.id);
     } finally {
       setThinking(false);
     }
   };
 
   const startVoice = () => {
+    stopSpeaking();
     stopVoice(false);
     setVoiceError(null);
     setTranscriptPreview('');
@@ -348,7 +565,7 @@ export function AIAssistant() {
         timestamp: new Date().toISOString()
       };
       setMessages(prev => [...prev, aiMsg]);
-      speak(msgText);
+      speak(msgText, aiMsg.id);
     }
     setPendingAction(null);
   };
@@ -410,8 +627,40 @@ export function AIAssistant() {
           </div>
         </div>
 
-        {/* Controls: AI Engine + Voice Language + Mic Hardware Diagnostic */}
+        {/* Controls: Auto-Speak + Speaking Stop + AI Engine + Voice Language + Mic Diagnostic */}
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Active Speaking Indicator with Stop Button */}
+          {isSpeaking && (
+            <button
+              type="button"
+              onClick={stopSpeaking}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-md shadow-red-500/20 animate-pulse transition-all cursor-pointer"
+              title="AI is speaking aloud. Click to stop speech immediately"
+            >
+              <VolumeX size={14} />
+              <span>Speaking... [Stop]</span>
+            </button>
+          )}
+
+          {/* Auto-Speak ON/OFF Toggle */}
+          <button
+            type="button"
+            onClick={() => {
+              if (isSpeaking) stopSpeaking();
+              setAutoSpeak(!autoSpeak);
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+              autoSpeak
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 shadow-xs'
+                : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
+            }`}
+            title={autoSpeak ? "Auto-Speak is ON: AI automatically speaks answers aloud. Click to mute" : "Auto-Speak is OFF: Click to enable voice answers"}
+          >
+            {autoSpeak ? <Volume2 size={13} className="text-emerald-600" /> : <VolumeX size={13} className="text-gray-400" />}
+            <span className="hidden sm:inline">{autoSpeak ? 'Auto-Speak: ON' : 'Auto-Speak: OFF'}</span>
+            <span className="sm:hidden">{autoSpeak ? 'Speak: ON' : 'Speak: OFF'}</span>
+          </button>
+
           {/* AI Engine Status Button */}
           <button
             type="button"
@@ -528,11 +777,25 @@ export function AIAssistant() {
               {msg.role === 'assistant' && (
                 <button
                   type="button"
-                  onClick={() => speak(msg.text)}
-                  title="Speak response aloud"
-                  className="text-gray-400 hover:text-blue-600 self-start p-1 rounded-md transition-colors"
+                  onClick={() => {
+                    if (isSpeaking && speakingMessageId === msg.id) {
+                      stopSpeaking();
+                    } else {
+                      speak(msg.text, msg.id, true);
+                    }
+                  }}
+                  title={isSpeaking && speakingMessageId === msg.id ? "Stop speaking aloud" : "Speak response aloud"}
+                  className={`self-start p-1.5 rounded-lg transition-all cursor-pointer ${
+                    isSpeaking && speakingMessageId === msg.id
+                      ? 'bg-red-100 text-red-600 hover:bg-red-200 animate-pulse'
+                      : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'
+                  }`}
                 >
-                  <Volume2 size={16} />
+                  {isSpeaking && speakingMessageId === msg.id ? (
+                    <VolumeX size={16} />
+                  ) : (
+                    <Volume2 size={16} />
+                  )}
                 </button>
               )}
             </div>

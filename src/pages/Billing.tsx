@@ -9,7 +9,7 @@ import { useApp } from '../context/AppContext';
 import { tr } from '../i18n';
 import { Product, CartItem } from '../types';
 import { parseVoiceBillingCommand } from '../services/voiceBillingService';
-import { extractBestSpeechAlternative, normalizeSlangSpeech } from '../services/speechAccentService';
+import { extractBestSpeechAlternative, normalizeSlangSpeech, cleanTextForSpeech } from '../services/speechAccentService';
 import { BarcodeScannerModal } from '../components/BarcodeScannerModal';
 import { identifyProductByBarcode, playBarcodeBeep } from '../services/barcodeService';
 
@@ -63,10 +63,15 @@ export function Billing() {
     if (!window.speechSynthesis) return;
     try {
       window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = voiceLang || 'en-IN';
-      utterance.rate = 1.0;
-      window.speechSynthesis.speak(utterance);
+      setTimeout(() => {
+        try {
+          const cleaned = cleanTextForSpeech(text, voiceLang || 'en-IN');
+          const utterance = new SpeechSynthesisUtterance(cleaned || text);
+          utterance.lang = voiceLang || 'en-IN';
+          utterance.rate = 1.0;
+          window.speechSynthesis.speak(utterance);
+        } catch {}
+      }, 50);
     } catch {}
   };
 
