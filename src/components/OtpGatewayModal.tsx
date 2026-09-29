@@ -5,6 +5,7 @@ import {
   saveEmailJsConfig, 
   DEFAULT_EMAILJS_PUBLIC_KEY, 
   DEFAULT_EMAILJS_SERVICE_ID,
+  DEFAULT_EMAILJS_TEMPLATE_ID,
   isEmailJsReady 
 } from '../services/emailService';
 import { 
@@ -25,7 +26,7 @@ export function OtpGatewayModal({ isOpen, onClose, onSaved }: Props) {
   // EmailJS fields
   const [publicKey, setPublicKey] = useState(DEFAULT_EMAILJS_PUBLIC_KEY);
   const [serviceId, setServiceId] = useState(DEFAULT_EMAILJS_SERVICE_ID);
-  const [templateId, setTemplateId] = useState('');
+  const [templateId, setTemplateId] = useState(DEFAULT_EMAILJS_TEMPLATE_ID);
 
   // SMS fields
   const [smsProvider, setSmsProvider] = useState<'fast2sms' | 'twilio' | 'none'>('fast2sms');
@@ -41,7 +42,7 @@ export function OtpGatewayModal({ isOpen, onClose, onSaved }: Props) {
       const emailCfg = getEmailJsConfig();
       setPublicKey(emailCfg.publicKey || DEFAULT_EMAILJS_PUBLIC_KEY);
       setServiceId(emailCfg.serviceId || DEFAULT_EMAILJS_SERVICE_ID);
-      setTemplateId(emailCfg.templateId || '');
+      setTemplateId(emailCfg.templateId || DEFAULT_EMAILJS_TEMPLATE_ID);
 
       const smsCfg = getSmsConfig();
       setSmsProvider(smsCfg.provider || 'fast2sms');

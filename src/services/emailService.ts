@@ -11,6 +11,7 @@ export interface EmailJsConfig {
 // User-provided credentials for emailjs.com
 export const DEFAULT_EMAILJS_PUBLIC_KEY = '-N8FcrZvABffbiYcI';
 export const DEFAULT_EMAILJS_SERVICE_ID = 'service_b26xza9';
+export const DEFAULT_EMAILJS_TEMPLATE_ID = 'template_au321la';
 
 /**
  * Retrieves the current EmailJS configuration from LocalStorage, environment, or defaults
@@ -23,7 +24,7 @@ export function getEmailJsConfig(): EmailJsConfig {
       return {
         publicKey: parsed.publicKey || DEFAULT_EMAILJS_PUBLIC_KEY,
         serviceId: parsed.serviceId || DEFAULT_EMAILJS_SERVICE_ID,
-        templateId: parsed.templateId || (import.meta as any).env?.VITE_EMAILJS_TEMPLATE_ID || '',
+        templateId: parsed.templateId || DEFAULT_EMAILJS_TEMPLATE_ID,
       };
     }
   } catch {}
@@ -31,7 +32,7 @@ export function getEmailJsConfig(): EmailJsConfig {
   return {
     publicKey: (import.meta as any).env?.VITE_EMAILJS_PUBLIC_KEY || DEFAULT_EMAILJS_PUBLIC_KEY,
     serviceId: (import.meta as any).env?.VITE_EMAILJS_SERVICE_ID || DEFAULT_EMAILJS_SERVICE_ID,
-    templateId: (import.meta as any).env?.VITE_EMAILJS_TEMPLATE_ID || '',
+    templateId: (import.meta as any).env?.VITE_EMAILJS_TEMPLATE_ID || DEFAULT_EMAILJS_TEMPLATE_ID,
   };
 }
 
