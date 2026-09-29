@@ -15,9 +15,13 @@ const GEMINI_API_KEY_STORAGE = 'ss_gemini_api_key';
  */
 export function getGeminiApiKey(): string {
   try {
-    return localStorage.getItem(GEMINI_API_KEY_STORAGE) || '';
-  } catch {
+    const local = localStorage.getItem(GEMINI_API_KEY_STORAGE);
+    if (local && local.trim()) return local.trim();
+    const envKey = (import.meta as any).env?.VITE_GEMINI_API_KEY;
+    if (envKey && typeof envKey === 'string' && envKey.trim()) return envKey.trim();
     return '';
+  } catch {
+    return (import.meta as any).env?.VITE_GEMINI_API_KEY || '';
   }
 }
 
@@ -52,30 +56,35 @@ export async function testGeminiApiKey(key: string): Promise<{ success: boolean;
     return { success: false, message: 'Please enter a valid Gemini API key.' };
   }
 
-  try {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${cleanKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: 'Respond with exactly the word: ACTIVE' }] }],
-        generationConfig: { maxOutputTokens: 10 }
-      })
-    });
+  const models = ['gemini-1.5-flash', 'gemini-2.0-flash'];
+  let lastError = '';
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => null);
-      const msg = err?.error?.message || `HTTP ${res.status}: ${res.statusText}`;
-      return { success: false, message: `Gemini API Error: ${msg}` };
-    }
+  for (const model of models) {
+    try {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: 'Respond with exactly: ACTIVE' }] }],
+          generationConfig: { maxOutputTokens: 10 }
+        })
+      });
 
-    const data = await res.json();
-    if (data.candidates && data.candidates.length > 0) {
-      return { success: true, message: 'Connected successfully to Google Gemini Real-Time AI!' };
+      if (res.ok) {
+        const data = await res.json();
+        if (data.candidates && data.candidates.length > 0) {
+          return { success: true, message: `Connected successfully to Google Gemini (${model}) Real-Time AI!` };
+        }
+      } else {
+        const err = await res.json().catch(() => null);
+        lastError = err?.error?.message || `HTTP ${res.status}: ${res.statusText}`;
+      }
+    } catch (err: any) {
+      lastError = err?.message || 'Network error connecting to Gemini API.';
     }
-    return { success: false, message: 'Gemini responded, but did not return content.' };
-  } catch (err: any) {
-    return { success: false, message: err?.message || 'Network error connecting to Gemini API.' };
   }
+
+  return { success: false, message: `Gemini API Error: ${lastError}` };
 }
 
 function findProduct(name: string, products: Product[]): Product | null {
@@ -277,24 +286,36 @@ async function callGeminiAPI(
     }
   };
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    }
-  );
+  const models = ['gemini-1.5-flash', 'gemini-2.0-flash'];
+  let rawText = '';
+  let lastError = '';
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => null);
-    throw new Error(err?.error?.message || `HTTP ${response.status}: ${response.statusText}`);
+  for (const model of models) {
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        if (rawText) break;
+      } else {
+        const err = await response.json().catch(() => null);
+        lastError = err?.error?.message || `HTTP ${response.status}: ${response.statusText}`;
+      }
+    } catch (e: any) {
+      lastError = e?.message || 'Network request error';
+    }
   }
 
-  const data = await response.json();
-  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
   if (!rawText) {
-    throw new Error('Empty response from Gemini.');
+    throw new Error(lastError || 'Empty response from Gemini.');
   }
 
   // Parse any action tag: [ACTION: {"type": "ADD_STOCK", ...}]

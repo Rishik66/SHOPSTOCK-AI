@@ -5,6 +5,7 @@ import { tr } from '../i18n';
 import { AIMessage, AIAction } from '../types';
 import { processQuery, isRealAIConfigured } from '../services/aiService';
 import { extractBestSpeechAlternative, normalizeSlangSpeech } from '../services/speechAccentService';
+import { GeminiModal } from '../components/GeminiModal';
 
 export function AIAssistant() {
   const { products, setProducts, transactions, language, addNotification, currentUser, setCurrentPage } = useApp();
@@ -23,6 +24,10 @@ export function AIAssistant() {
   const [testingMic, setTestingMic] = useState<boolean>(false);
   const [testVolume, setTestVolume] = useState<number>(0);
   const [testResult, setTestResult] = useState<string | null>(null);
+
+  // Gemini Real AI Modal State
+  const [showGeminiModal, setShowGeminiModal] = useState<boolean>(false);
+  const [isGeminiActive, setIsGeminiActive] = useState<boolean>(isRealAIConfigured());
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -381,17 +386,17 @@ export function AIAssistant() {
           {/* AI Engine Status Button */}
           <button
             type="button"
-            onClick={() => setCurrentPage('settings')}
+            onClick={() => setShowGeminiModal(true)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-              isRealAIConfigured()
-                ? 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100'
+              isGeminiActive
+                ? 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100 shadow-xs'
                 : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
             }`}
-            title="Click to configure Real-Time Google Gemini AI in Settings"
+            title="Click to configure Real-Time Google Gemini AI"
           >
-            <Sparkles size={13} className={isRealAIConfigured() ? 'text-purple-600' : 'text-emerald-600'} />
-            <span className="hidden sm:inline">{isRealAIConfigured() ? 'Google Gemini Live' : 'Smart Retail AI Engine'}</span>
-            <span className="sm:hidden">{isRealAIConfigured() ? 'Gemini' : 'Smart AI'}</span>
+            <Sparkles size={13} className={isGeminiActive ? 'text-purple-600 animate-pulse' : 'text-emerald-600'} />
+            <span className="hidden sm:inline">{isGeminiActive ? 'Google Gemini Live' : 'Connect Real AI'}</span>
+            <span className="sm:hidden">{isGeminiActive ? 'Gemini' : 'Connect AI'}</span>
           </button>
 
           {/* Hardware Diagnostic Button */}
@@ -456,6 +461,25 @@ export function AIAssistant() {
         }`}>
           <span>{testResult}</span>
           <button onClick={() => setTestResult(null)} className="font-bold px-2 py-0.5 hover:opacity-75">✕</button>
+        </div>
+      )}
+
+      {/* Real AI Connect Banner when running local engine */}
+      {!isGeminiActive && (
+        <div className="bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 border-b border-purple-200/80 px-4 py-2.5 flex items-center justify-between gap-3 text-xs text-purple-900 shrink-0 shadow-xs">
+          <div className="flex items-center gap-2 min-w-0">
+            <Sparkles size={16} className="text-purple-600 shrink-0" />
+            <span className="truncate sm:overflow-visible">
+              Unlock open conversational answers & deep sales analysis: <strong>Connect Google Gemini Real AI</strong>.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowGeminiModal(true)}
+            className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold text-xs shrink-0 shadow-xs transition-colors cursor-pointer"
+          >
+            Connect Free Key
+          </button>
         </div>
       )}
       
@@ -651,6 +675,13 @@ export function AIAssistant() {
           </button>
         </form>
       </div>
+
+      {/* Google Gemini API Key Modal */}
+      <GeminiModal
+        isOpen={showGeminiModal}
+        onClose={() => setShowGeminiModal(false)}
+        onConfigChanged={() => setIsGeminiActive(isRealAIConfigured())}
+      />
     </div>
   );
 }
